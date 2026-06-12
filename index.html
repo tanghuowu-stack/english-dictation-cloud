@@ -1,0 +1,3362 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>家庭英语单词听写</title>
+  <style>
+    :root {
+      --content-width: 1080px;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #1f2933;
+      --muted: #667085;
+      --line: #d9dee7;
+      --brand: #2364aa;
+      --brand-dark: #174d86;
+      --ok: #13795b;
+      --warn: #ad6a00;
+      --danger: #b42318;
+      --soft: #eef4fb;
+      --radius: 8px;
+      --shadow: 0 1px 2px rgba(16, 24, 40, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .topbar {
+      max-width: var(--content-width);
+      margin: 0 auto;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h1 { font-size: 21px; }
+    h2 { font-size: 20px; margin-bottom: 12px; }
+    h3 { font-size: 16px; margin-bottom: 10px; }
+
+    .library-switcher {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    main {
+      max-width: var(--content-width);
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    nav {
+      max-width: var(--content-width);
+      margin: 0 auto;
+      padding: 0 16px 12px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+    }
+
+    .nav-btn {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      white-space: nowrap;
+      min-height: 42px;
+    }
+
+    .nav-btn.active {
+      border-color: var(--brand);
+      background: var(--soft);
+      color: var(--brand-dark);
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .row.between { justify-content: space-between; }
+    .stack { display: grid; gap: 10px; }
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+    .strong { font-weight: 700; }
+
+    button, input, select, textarea {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button {
+      border: 1px solid var(--brand);
+      background: var(--brand);
+      color: #fff;
+      min-height: 42px;
+      padding: 9px 13px;
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--brand-dark); }
+    button.secondary {
+      background: #fff;
+      color: var(--brand);
+      border-color: #9bb8d8;
+    }
+
+    button.secondary:hover { background: var(--soft); }
+    button.danger {
+      background: #fff;
+      color: var(--danger);
+      border-color: #e7aaa5;
+    }
+
+    button.danger:hover { background: #fff3f1; }
+    button.ghost {
+      background: #fff;
+      color: var(--text);
+      border-color: var(--line);
+    }
+
+    button.ghost:hover { background: #f2f4f7; }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 9px 10px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+    }
+
+    .checkbox-row input {
+      width: 20px;
+      min-height: 20px;
+      accent-color: var(--brand);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px;
+      min-height: 70px;
+    }
+
+    .stat .num {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--brand-dark);
+    }
+
+    .notice {
+      border: 1px solid #f0c980;
+      background: #fff8e8;
+      color: #6f4700;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .success {
+      border: 1px solid #8dc7b2;
+      background: #eefaf5;
+      color: #0d5d45;
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .tag.new { border-color: #95c4e6; color: #175c92; background: #edf7ff; }
+    .tag.wrong { border-color: #f0b3ad; color: #9a2218; background: #fff3f1; }
+    .tag.review { border-color: #d8ba72; color: #7a5100; background: #fff8e8; }
+    .tag.multi { border-color: #a6a9d9; color: #373088; background: #f1f0ff; }
+    .tag.ok { border-color: #8dc7b2; color: #0d5d45; background: #eefaf5; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 9px 8px;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #344054;
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 520px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .page-scroll-table {
+      max-height: none;
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+
+    .word-cell { min-width: 150px; font-weight: 700; }
+    .meaning-cell { min-width: 160px; }
+    .actions-cell { min-width: 210px; }
+
+    .player {
+      display: grid;
+      place-items: center;
+      min-height: 260px;
+      text-align: center;
+      gap: 16px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .progress-big {
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--brand-dark);
+    }
+
+    .word-hidden {
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .answer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      width: min(680px, 100%);
+      text-align: left;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      background: #fbfcfd;
+    }
+
+    .danger-text { color: var(--danger); }
+    .ok-text { color: var(--ok); }
+    .warn-text { color: var(--warn); }
+
+    @media (max-width: 820px) {
+      .topbar { grid-template-columns: 1fr; }
+      .library-switcher { justify-content: flex-start; }
+      .span-8, .span-6, .span-4 { grid-column: span 12; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .split { grid-template-columns: 1fr; }
+      nav { padding-bottom: 10px; }
+      button { width: auto; min-height: 46px; }
+      .row.mobile-full button, .row.mobile-full select, .row.mobile-full input { flex: 1 1 100%; }
+    }
+
+    @media (min-width: 821px) and (max-width: 1100px) {
+      :root { --content-width: 1000px; }
+      main { padding: 12px; }
+      .topbar { padding: 10px 12px; }
+      nav { padding-left: 12px; padding-right: 12px; }
+      .card { padding: 12px; }
+      .stat { min-height: 64px; padding: 9px; }
+      .stat .num { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>家庭英语单词听写</h1>
+        <div class="small muted">长期可复用，多词库，本地保存</div>
+      </div>
+      <div class="library-switcher">
+        <span class="small muted">当前词库</span>
+        <select id="librarySelect" aria-label="切换词库"></select>
+      </div>
+    </div>
+    <nav id="mainNav"></nav>
+  </header>
+
+  <main id="app"></main>
+
+  <script>
+    const STORAGE_KEY = "family_english_dictation_v1";
+    const APP_VERSION = "1.0.0";
+    const SOURCE_LABELS = {
+      new: "新词",
+      wrong: "错词复习",
+      review: "到期复查",
+      multi: "多重来源"
+    };
+    const RECOMMENDED_VOICE_PRESETS = [
+      {
+        id: "google-us",
+        label: "美音",
+        lang: "en-US",
+        names: ["Google US English"],
+        fallback: "日常单词听写，清楚稳定"
+      },
+      {
+        id: "google-uk-female",
+        label: "英音",
+        lang: "en-GB",
+        names: ["Google UK English Female"],
+        fallback: "英音环境，适合 Cambridge/FCE"
+      }
+    ];
+    const DEFAULT_SETTINGS = {
+      earlyPhaseDays: 15,
+      earlyNewWordsPerDay: 30,
+      laterNewWordsPerDay: 20,
+      reviewDelayDays: 15,
+      dailyTargetWords: 30,
+      dailyReviewWords: 30,
+      dailyMaxWords: 60,
+      countMode: "split-new-review",
+      pauseNewWords: false,
+      playOrder: "ordered",
+      autoPlayIntervalSeconds: 5,
+      autoPlayRepeatTimes: 1,
+      speechRate: 0.9,
+      speechVoiceName: "",
+      showAnswerEnglish: false,
+      showAnswerMeaning: false,
+      correctTimesToExitWrongPool: 1
+    };
+
+    let data = null;
+    let viewName = "today";
+    let dictationIndex = 0;
+    let autoTimer = null;
+    let todaySummary = null;
+    let manualStrictTask = null;
+    let manualBatchSession = null;
+    let editingRecordDay = null;
+    let availableSpeechVoices = [];
+
+    function uid(prefix) {
+      return prefix + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    }
+
+    function todayDate() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function normalizeWord(word) {
+      return String(word || "").trim().toLowerCase();
+    }
+
+    function normalizeMeaning(meaning) {
+      return String(meaning || "").trim().replace(/\s+/g, " ");
+    }
+
+    function normalizeWordForDuplicate(word) {
+      return String(word || "").trim();
+    }
+
+    function getWordDuplicateKey(word, meaning) {
+      return normalizeWordForDuplicate(word) + "\u0001" + normalizeMeaning(meaning);
+    }
+
+    function simpleHash(text) {
+      let hash = 5381;
+      for (let i = 0; i < text.length; i += 1) {
+        hash = ((hash << 5) + hash) + text.charCodeAt(i);
+        hash = hash >>> 0;
+      }
+      return hash.toString(36);
+    }
+
+    function generateWordId(rawWord, meaning, usedIds) {
+      const base = normalizeWord(rawWord).replace(/[^a-z0-9_-]+/g, "_") || "word";
+      let candidate = base;
+      if (!usedIds.has(candidate)) return candidate;
+      candidate = base + "__" + simpleHash(getWordDuplicateKey(rawWord, meaning));
+      let suffix = 2;
+      while (usedIds.has(candidate)) {
+        candidate = base + "__" + simpleHash(getWordDuplicateKey(rawWord, meaning)) + "_" + suffix;
+        suffix += 1;
+      }
+      return candidate;
+    }
+
+    function makeWord(rawWord, meaning, index) {
+      const normalized = normalizeWord(rawWord);
+      return {
+        id: normalized || uid("word"),
+        word: String(rawWord || "").trim(),
+        meaning: String(meaning || "").trim(),
+        index,
+        firstLearnDay: null,
+        delayedReviewDay: null,
+        delayedReviewCompleted: false,
+        delayedReviewPostponed: false,
+        wrongCount: 0,
+        lastWrongDay: null,
+        lastWrongDate: null,
+        isPendingWrong: false,
+        correctStreakInWrongPool: 0,
+        isFocus: false,
+        isStubborn: false,
+        manualFocus: null,
+        manualStubborn: null
+      };
+    }
+
+    function loadData() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch (error) {
+          alert("本地数据读取失败，将创建一个新的空数据。旧数据仍保留在浏览器存储中。");
+          data = null;
+        }
+      }
+      if (!data || !Array.isArray(data.libraries)) {
+        data = {
+          version: APP_VERSION,
+          activeLibraryId: null,
+          libraries: []
+        };
+        createLibrary("我的词库", false);
+      }
+      data.version = data.version || APP_VERSION;
+      data.libraries.forEach(migrateLibrary);
+      if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
+      saveData();
+    }
+
+    function saveData() {
+      if (!data) return;
+      data.version = APP_VERSION;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function migrateLibrary(lib) {
+      lib.libraryId = lib.libraryId || uid("lib");
+      lib.libraryName = lib.libraryName || "未命名词库";
+      lib.createdAt = lib.createdAt || todayDate();
+      lib.updatedAt = lib.updatedAt || todayDate();
+      const existingSettings = lib.settings || {};
+      const shouldMigrateSplitCount = existingSettings.dailyReviewWords == null && existingSettings.countMode !== "split-new-review";
+      lib.settings = Object.assign({}, DEFAULT_SETTINGS, existingSettings);
+      if (shouldMigrateSplitCount) {
+        lib.settings.dailyTargetWords = 30;
+        lib.settings.dailyReviewWords = 30;
+        lib.settings.countMode = "split-new-review";
+      } else {
+        lib.settings.dailyTargetWords = clampNumber(lib.settings.dailyTargetWords, 0, 100, 30);
+        lib.settings.dailyReviewWords = clampNumber(lib.settings.dailyReviewWords, 0, 100, 30);
+        lib.settings.countMode = "split-new-review";
+      }
+      lib.words = Array.isArray(lib.words) ? lib.words : [];
+      lib.dailyRecords = Array.isArray(lib.dailyRecords) ? lib.dailyRecords : [];
+      lib.currentDraftTask = lib.currentDraftTask || null;
+      lib.words.forEach((word, index) => {
+        const normalized = normalizeWord(word.word || word.id);
+        word.id = word.id || normalized || uid("word");
+        word.word = word.word || word.id;
+        word.meaning = word.meaning || "";
+        word.index = Number.isFinite(word.index) ? word.index : index;
+        word.firstLearnDay = word.firstLearnDay ?? null;
+        word.delayedReviewDay = word.delayedReviewDay ?? null;
+        word.delayedReviewCompleted = Boolean(word.delayedReviewCompleted);
+        word.delayedReviewPostponed = Boolean(word.delayedReviewPostponed);
+        word.wrongCount = Number(word.wrongCount || 0);
+        word.lastWrongDay = word.lastWrongDay ?? null;
+        word.lastWrongDate = word.lastWrongDate ?? null;
+        word.isPendingWrong = Boolean(word.isPendingWrong);
+        word.correctStreakInWrongPool = Number(word.correctStreakInWrongPool || 0);
+        word.manualFocus = word.manualFocus ?? null;
+        word.manualStubborn = word.manualStubborn ?? null;
+        applyWrongFlags(word);
+      });
+      lib.words.sort((a, b) => a.index - b.index);
+    }
+
+    function createLibrary(name, shouldRender = true) {
+      const lib = {
+        libraryId: uid("lib"),
+        libraryName: String(name || "新词库").trim() || "新词库",
+        createdAt: todayDate(),
+        updatedAt: todayDate(),
+        settings: Object.assign({}, DEFAULT_SETTINGS),
+        words: [],
+        dailyRecords: [],
+        currentDraftTask: null
+      };
+      if (!data) {
+        data = { version: APP_VERSION, activeLibraryId: lib.libraryId, libraries: [] };
+      }
+      data.libraries.push(lib);
+      data.activeLibraryId = lib.libraryId;
+      saveData();
+      if (shouldRender) renderApp();
+      return lib;
+    }
+
+    function switchLibrary(libraryId) {
+      stopAutoPlay();
+      if (data.libraries.some(lib => lib.libraryId === libraryId)) {
+        data.activeLibraryId = libraryId;
+        dictationIndex = 0;
+        todaySummary = null;
+        manualStrictTask = null;
+        saveData();
+        renderApp();
+      }
+    }
+
+    function deleteLibrary(libraryId) {
+      const lib = data.libraries.find(item => item.libraryId === libraryId);
+      if (!lib) return;
+      const first = confirm("确定要删除词库“" + lib.libraryName + "”吗？这个操作不能撤销。");
+      if (!first) return;
+      const second = confirm("请再次确认：删除后该词库的单词、进度和错词记录都会消失。");
+      if (!second) return;
+      data.libraries = data.libraries.filter(item => item.libraryId !== libraryId);
+      if (!data.libraries.length) createLibrary("我的词库", false);
+      data.activeLibraryId = data.libraries[0].libraryId;
+      saveData();
+      renderApp();
+    }
+
+    function updateLibrarySettings(partial) {
+      const lib = getCurrentLibrary();
+      if (!lib) return;
+      lib.settings = Object.assign({}, lib.settings, partial);
+      lib.updatedAt = todayDate();
+      saveData();
+      renderApp();
+    }
+
+    function getCurrentLibrary() {
+      if (!data || !Array.isArray(data.libraries)) return null;
+      return data.libraries.find(lib => lib.libraryId === data.activeLibraryId) || data.libraries[0] || null;
+    }
+
+    function getWordById(lib, id) {
+      return lib.words.find(word => word.id === id);
+    }
+
+    function findWordByImportedItem(lib, item) {
+      const importedWord = normalizeWordForDuplicate(item.word);
+      const candidates = lib.words.filter(word => normalizeWordForDuplicate(word.word) === importedWord);
+      if (!candidates.length) return null;
+      const meaning = normalizeMeaning(item.meaning);
+      if (meaning) {
+        return candidates.find(word => normalizeMeaning(word.meaning) === meaning) || null;
+      }
+      return candidates[0];
+    }
+
+    function parseWordList(text) {
+      const rows = String(text || "").split(/\r?\n/);
+      const result = [];
+      rows.forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let word = trimmed;
+        let meaning = "";
+        if (trimmed.includes("|")) {
+          const parts = trimmed.split("|");
+          word = parts.shift().trim();
+          meaning = parts.join("|").trim();
+        } else if (trimmed.includes("\t")) {
+          const parts = trimmed.split("\t");
+          word = parts.shift().trim();
+          meaning = parts.join("\t").trim();
+        } else {
+          const firstChineseIndex = trimmed.search(/[\u3400-\u9fff]/);
+          if (firstChineseIndex >= 0) {
+          word = trimmed.slice(0, firstChineseIndex).trim();
+          meaning = trimmed.slice(firstChineseIndex).trim();
+          }
+        }
+        if (word) result.push({ word, meaning });
+      });
+      return result;
+    }
+
+    function importWordsToLibrary(lib, text, mode = "append") {
+      const parsed = parseWordList(text);
+      if (!parsed.length) return { added: 0, skipped: 0 };
+      if (mode === "replace") {
+        lib.words = [];
+        lib.dailyRecords = [];
+        lib.currentDraftTask = null;
+      }
+      const existing = new Set(lib.words.map(word => getWordDuplicateKey(word.word, word.meaning)));
+      const usedIds = new Set(lib.words.map(word => word.id));
+      let added = 0;
+      let skipped = 0;
+      parsed.forEach(item => {
+        const normalized = normalizeWordForDuplicate(item.word);
+        const duplicateKey = getWordDuplicateKey(item.word, item.meaning);
+        if (!normalized || existing.has(duplicateKey)) {
+          skipped += 1;
+          return;
+        }
+        const word = makeWord(item.word, item.meaning, lib.words.length);
+        word.id = generateWordId(item.word, item.meaning, usedIds);
+        lib.words.push(word);
+        existing.add(duplicateKey);
+        usedIds.add(word.id);
+        added += 1;
+      });
+      lib.updatedAt = todayDate();
+      saveData();
+      return { added, skipped };
+    }
+
+    function repairSplitPhraseMeanings(lib) {
+      let repaired = 0;
+      let skipped = 0;
+      lib.words.forEach(word => {
+        const match = String(word.meaning || "").trim().match(/^([A-Za-z][A-Za-z0-9'’&/().-]*(?:\s+[A-Za-z][A-Za-z0-9'’&/().-]*)*)\s+([\u3400-\u9fff].*)$/);
+        if (!match) return;
+        const nextWord = (word.word + " " + match[1]).trim().replace(/\s+/g, " ");
+        const nextMeaning = match[2].trim();
+        const duplicate = lib.words.some(other => {
+          return other.id !== word.id && getWordDuplicateKey(other.word, other.meaning) === getWordDuplicateKey(nextWord, nextMeaning);
+        });
+        if (duplicate) {
+          skipped += 1;
+          return;
+        }
+        word.word = nextWord;
+        word.meaning = nextMeaning;
+        repaired += 1;
+      });
+      if (repaired) {
+        lib.updatedAt = todayDate();
+        saveData();
+      }
+      return { repaired, skipped };
+    }
+
+    function getNextDayNumber(lib = getCurrentLibrary()) {
+      if (!lib || !lib.dailyRecords.length) return 1;
+      return Math.max(...lib.dailyRecords.map(record => Number(record.dayNumber || 0))) + 1;
+    }
+
+    function getPlannedNewWordCount(dayNumber, lib = getCurrentLibrary()) {
+      const settings = lib.settings;
+      if (settings.pauseNewWords) return 0;
+      return clampNumber(settings.dailyTargetWords, 0, 100, 30);
+    }
+
+    function getUnlearnedWords(lib = getCurrentLibrary()) {
+      return lib.words
+        .filter(word => word.firstLearnDay == null)
+        .sort((a, b) => a.index - b.index);
+    }
+
+    function getPendingWrongWords(lib = getCurrentLibrary()) {
+      return lib.words
+        .filter(word => word.isPendingWrong)
+        .sort((a, b) => a.index - b.index);
+    }
+
+    function getDueDelayedReviewWords(dayNumber, lib = getCurrentLibrary()) {
+      return lib.words
+        .filter(word => {
+          return word.firstLearnDay != null
+            && word.delayedReviewDay != null
+            && !word.delayedReviewCompleted
+            && Number(word.delayedReviewDay) <= Number(dayNumber);
+        })
+        .sort((a, b) => {
+          if (a.delayedReviewDay !== b.delayedReviewDay) return a.delayedReviewDay - b.delayedReviewDay;
+          return a.index - b.index;
+        });
+    }
+
+    function applyDailyLimit(pendingWrongWords, dueReviewWords, unlearnedWords, plannedNewCount, settings) {
+      const selectedWrongIds = pendingWrongWords.map(word => word.id);
+      const selectedIdSet = new Set(selectedWrongIds);
+      const selectedReviewIds = [];
+      const postponedReviewIds = [];
+      const reviewLimit = clampNumber(settings.dailyReviewWords, 0, 100, 30);
+
+      dueReviewWords.forEach(word => {
+        if (selectedReviewIds.length < reviewLimit) {
+          selectedReviewIds.push(word.id);
+          selectedIdSet.add(word.id);
+        } else {
+          postponedReviewIds.push(word.id);
+        }
+      });
+
+      const newWordIds = [];
+      const newLimit = clampNumber(plannedNewCount, 0, 100, 30);
+      for (const word of unlearnedWords) {
+        if (newWordIds.length >= newLimit) break;
+        if (selectedIdSet.has(word.id)) continue;
+        newWordIds.push(word.id);
+        selectedIdSet.add(word.id);
+      }
+
+      return {
+        pendingWrongWordIds: selectedWrongIds,
+        delayedReviewWordIds: selectedReviewIds,
+        postponedReviewWordIds: postponedReviewIds,
+        newWordIds,
+        plannedNewCount,
+        actualNewCount: newWordIds.length,
+        wrongOverflow: false
+      };
+    }
+
+    function buildTodayTask(lib = getCurrentLibrary()) {
+      if (!lib) return null;
+      if (lib.currentDraftTask) return lib.currentDraftTask;
+
+      const dayNumber = getNextDayNumber(lib);
+      const plannedNewCount = getPlannedNewWordCount(dayNumber, lib);
+      const pendingWrongWords = getPendingWrongWords(lib);
+      const dueReviewWords = getDueDelayedReviewWords(dayNumber, lib);
+      const unlearnedWords = getUnlearnedWords(lib);
+      const limited = applyDailyLimit(pendingWrongWords, dueReviewWords, unlearnedWords, plannedNewCount, lib.settings);
+      const sourceMap = {};
+
+      function addSource(ids, source) {
+        ids.forEach(id => {
+          sourceMap[id] = sourceMap[id] || [];
+          if (!sourceMap[id].includes(source)) sourceMap[id].push(source);
+        });
+      }
+
+      addSource(limited.pendingWrongWordIds, "wrong");
+      addSource(limited.delayedReviewWordIds, "review");
+      addSource(limited.newWordIds, "new");
+
+      let taskWordIds = Array.from(new Set([
+        ...limited.pendingWrongWordIds,
+        ...limited.delayedReviewWordIds,
+        ...limited.newWordIds
+      ]));
+
+      taskWordIds = orderTaskIds(taskWordIds, lib);
+
+      lib.currentDraftTask = {
+        taskId: uid("task"),
+        dayNumber,
+        date: todayDate(),
+        createdAt: nowIso(),
+        currentIndex: 0,
+        taskWordIds,
+        newWordIds: limited.newWordIds,
+        pendingWrongWordIds: limited.pendingWrongWordIds,
+        delayedReviewWordIds: limited.delayedReviewWordIds,
+        postponedReviewWordIds: limited.postponedReviewWordIds,
+        plannedNewCount: limited.plannedNewCount,
+        actualNewCount: limited.actualNewCount,
+        wrongOverflow: limited.wrongOverflow,
+        sourceMap
+      };
+      saveData();
+      return lib.currentDraftTask;
+    }
+
+    function orderTaskIds(ids, lib) {
+      const unique = Array.from(new Set(ids));
+      if (lib.settings.playOrder === "random") {
+        const shuffled = unique.slice();
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      }
+      return unique.sort((a, b) => {
+        const wa = getWordById(lib, a);
+        const wb = getWordById(lib, b);
+        return (wa?.index ?? 0) - (wb?.index ?? 0);
+      });
+    }
+
+    function clampNumber(value, min, max, fallback) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return fallback;
+      return Math.min(max, Math.max(min, number));
+    }
+
+    function refreshSpeechVoices() {
+      if (!("speechSynthesis" in window)) {
+        availableSpeechVoices = [];
+        return [];
+      }
+      availableSpeechVoices = window.speechSynthesis.getVoices()
+        .filter(voice => /^en([-_]|$)/i.test(voice.lang || ""))
+        .sort((a, b) => {
+          const score = voicePreferenceScore(b) - voicePreferenceScore(a);
+          return score || String(a.name).localeCompare(String(b.name));
+        });
+      return availableSpeechVoices;
+    }
+
+    function voicePreferenceScore(voice) {
+      const name = String(voice.name || "").toLowerCase();
+      const lang = String(voice.lang || "").toLowerCase();
+      let score = 0;
+      if (lang === "en-us") score += 20;
+      if (name.includes("google us english")) score += 100;
+      else if (name.includes("google") && lang.startsWith("en")) score += 70;
+      else if (name.includes("microsoft") && lang.startsWith("en")) score += 45;
+      else if (name.includes("samantha") || name.includes("alex")) score += 35;
+      if (voice.localService) score += 5;
+      return score;
+    }
+
+    function normalizeVoiceName(name) {
+      return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    }
+
+    function getVoicePresetById(id) {
+      return RECOMMENDED_VOICE_PRESETS.find(preset => preset.id === id) || null;
+    }
+
+    function findVoiceForPreset(preset, voices) {
+      if (!preset || !voices.length) return null;
+      for (const candidateName of preset.names) {
+        const normalizedCandidate = normalizeVoiceName(candidateName);
+        const exact = voices.find(voice => normalizeVoiceName(voice.name) === normalizedCandidate);
+        if (exact) return exact;
+        const contains = voices.find(voice => normalizeVoiceName(voice.name).includes(normalizedCandidate));
+        if (contains) return contains;
+      }
+      const sameLang = voices.find(voice => String(voice.lang || "").toLowerCase() === preset.lang.toLowerCase());
+      if (sameLang) return sameLang;
+      const sameEnglishFamily = voices.find(voice => String(voice.lang || "").toLowerCase().startsWith(preset.lang.slice(0, 2).toLowerCase()));
+      return sameEnglishFamily || null;
+    }
+
+    function getPreferredSpeechVoice(settings = getCurrentLibrary()?.settings || {}) {
+      const voices = availableSpeechVoices.length ? availableSpeechVoices : refreshSpeechVoices();
+      if (!voices.length) return null;
+      const preset = getVoicePresetById(settings.speechVoiceName) || getVoicePresetById("google-us");
+      return findVoiceForPreset(preset, voices) || voices[0];
+    }
+
+    function getSpeechVoiceOptionsHtml(selectedName = "") {
+      const voices = availableSpeechVoices.length ? availableSpeechVoices : refreshSpeechVoices();
+      const selectedPresetId = getVoicePresetById(selectedName) ? selectedName : "google-us";
+      return RECOMMENDED_VOICE_PRESETS.map(preset => {
+        const matchedVoice = findVoiceForPreset(preset, voices);
+        const status = matchedVoice ? "（可用）" : "（自动兜底）";
+        return '<option value="' + escapeHtml(preset.id) + '"' + (preset.id === selectedPresetId ? " selected" : "") + '>' + escapeHtml(preset.label + status) + '</option>';
+      }).join("");
+    }
+
+    function hydrateSpeechVoiceSelects() {
+      const lib = getCurrentLibrary();
+      if (!lib) return;
+      document.querySelectorAll("[data-speech-voice-select]").forEach(select => {
+        const current = getVoicePresetById(lib.settings.speechVoiceName) ? lib.settings.speechVoiceName : "google-us";
+        lib.settings.speechVoiceName = current;
+        select.innerHTML = getSpeechVoiceOptionsHtml(current);
+        select.value = current;
+      });
+    }
+
+    function speakWord(wordText) {
+      if (!("speechSynthesis" in window)) {
+        alert("当前浏览器不支持 Web Speech API，请换用新版 Chrome、Edge 或 Safari。");
+        return;
+      }
+      const lib = getCurrentLibrary();
+      const utterance = new SpeechSynthesisUtterance(String(wordText || ""));
+      utterance.lang = lib?.settings?.speechLang || "en-US";
+      utterance.rate = clampNumber(lib?.settings?.speechRate, 0.5, 1.5, 0.9);
+      const voice = getPreferredSpeechVoice(lib?.settings || {});
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang || utterance.lang;
+      }
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function startDictation() {
+      const lib = getCurrentLibrary();
+      if (!lib || !lib.words.length) {
+        alert("请先在词库中导入单词。");
+        return;
+      }
+      const task = buildTodayTask(lib);
+      dictationIndex = Math.min(Number(task.currentIndex || 0), Math.max(0, task.taskWordIds.length - 1));
+      todaySummary = null;
+      renderTodayView("player");
+    }
+
+    function regenerateTodayTaskFromSettings() {
+      const lib = getCurrentLibrary();
+      if (!lib || !lib.currentDraftTask) return;
+      const ok = confirm("确定要按当前设置重新生成今日任务吗？这不会增加 Day，也不会写入记录。");
+      if (!ok) return;
+      const taskDate = lib.currentDraftTask.date || todayDate();
+      stopAutoPlay();
+      lib.currentDraftTask = null;
+      const task = buildTodayTask(lib);
+      task.date = taskDate;
+      dictationIndex = 0;
+      todaySummary = null;
+      saveData();
+      renderTodayView("player");
+    }
+
+    function submitTodayResult() {
+      const lib = getCurrentLibrary();
+      const task = lib.currentDraftTask;
+      if (!task) return;
+      const checked = Array.from(document.querySelectorAll("[data-wrong-check]:checked")).map(input => input.value);
+      const record = createDailyRecord(lib, task, checked, "normal");
+      const summary = updateWordStatsFromRecord(lib, record);
+      summary.recordId = record.recordId;
+      lib.dailyRecords.push(record);
+      lib.currentDraftTask = null;
+      lib.updatedAt = todayDate();
+      todaySummary = summary;
+      dictationIndex = 0;
+      stopAutoPlay();
+      saveData();
+      renderTodayView("summary");
+    }
+
+    function undoLatestDailyRecord() {
+      const lib = getCurrentLibrary();
+      if (!lib || !lib.dailyRecords.length) {
+        alert("没有可撤销的完成记录。");
+        return;
+      }
+      const ok = confirm("确定要撤销最近一次完成记录吗？这会删除最后一天的记录，并重新计算词库状态。");
+      if (!ok) return;
+      const latest = lib.dailyRecords.slice().sort((a, b) => {
+        const dayOrder = Number(b.dayNumber || 0) - Number(a.dayNumber || 0);
+        return dayOrder || String(b.completedAt || "").localeCompare(String(a.completedAt || ""));
+      })[0];
+      const latestIndex = lib.dailyRecords.indexOf(latest);
+      if (latestIndex >= 0) lib.dailyRecords.splice(latestIndex, 1);
+      lib.currentDraftTask = null;
+      todaySummary = null;
+      dictationIndex = 0;
+      recalculateLibraryState(lib);
+      lib.updatedAt = todayDate();
+      saveData();
+      renderApp();
+    }
+
+    function createDailyRecord(lib, task, wrongWordIds, source = "normal") {
+      return {
+        recordId: uid("rec"),
+        dayNumber: Number(task.dayNumber),
+        date: task.date || todayDate(),
+        taskWordIds: task.taskWordIds.slice(),
+        newWordIds: task.newWordIds.slice(),
+        pendingWrongWordIds: task.pendingWrongWordIds.slice(),
+        delayedReviewWordIds: task.delayedReviewWordIds.slice(),
+        postponedReviewWordIds: task.postponedReviewWordIds.slice(),
+        wrongWordIds: Array.from(new Set(wrongWordIds)),
+        completedAt: nowIso(),
+        source,
+        sourceMap: clone(task.sourceMap || {}),
+        plannedNewCount: Number(task.plannedNewCount || 0),
+        actualNewCount: Number(task.actualNewCount || task.newWordIds.length || 0)
+      };
+    }
+
+    function getRecordDate(record) {
+      if (record?.date) return record.date;
+      if (record?.completedAt) return String(record.completedAt).slice(0, 10);
+      if (record?.createdAt) return String(record.createdAt).slice(0, 10);
+      return todayDate();
+    }
+
+    function updateWordStatsFromRecord(lib, record) {
+      const wrongSet = new Set(record.wrongWordIds || []);
+      const delayedSet = new Set(record.delayedReviewWordIds || []);
+      const newSet = new Set(record.newWordIds || []);
+      const recordDate = getRecordDate(record);
+      const pendingBefore = new Set(lib.words.filter(word => word.isPendingWrong).map(word => word.id));
+      const movedOut = [];
+      const newWrong = [];
+      const continuedWrong = [];
+
+      newSet.forEach(id => {
+        const word = getWordById(lib, id);
+        if (!word) return;
+        if (word.firstLearnDay == null) {
+          word.firstLearnDay = Number(record.dayNumber);
+          if (record.skipDelayedReviewSchedule) {
+            word.delayedReviewDay = null;
+            word.delayedReviewCompleted = true;
+          } else {
+            word.delayedReviewDay = Number(record.dayNumber) + Number(lib.settings.reviewDelayDays || 15);
+            word.delayedReviewCompleted = false;
+          }
+          word.delayedReviewPostponed = false;
+        }
+      });
+
+      (record.postponedReviewWordIds || []).forEach(id => {
+        const word = getWordById(lib, id);
+        if (word) word.delayedReviewPostponed = true;
+      });
+
+      (record.taskWordIds || []).forEach(id => {
+        const word = getWordById(lib, id);
+        if (!word) return;
+        const wasWrong = wrongSet.has(id);
+        if (wasWrong) {
+          word.wrongCount = Number(word.wrongCount || 0) + 1;
+          word.lastWrongDay = Number(record.dayNumber);
+          word.lastWrongDate = recordDate;
+          word.isPendingWrong = true;
+          word.correctStreakInWrongPool = 0;
+          if (pendingBefore.has(id)) continuedWrong.push(id);
+          else newWrong.push(id);
+        } else if (pendingBefore.has(id)) {
+          word.correctStreakInWrongPool = Number(word.correctStreakInWrongPool || 0) + 1;
+          if (word.correctStreakInWrongPool >= Number(lib.settings.correctTimesToExitWrongPool || 1)) {
+            word.isPendingWrong = false;
+            word.correctStreakInWrongPool = 0;
+            movedOut.push(id);
+          }
+        }
+        if (delayedSet.has(id)) {
+          word.delayedReviewCompleted = true;
+          word.delayedReviewPostponed = false;
+        }
+        applyWrongFlags(word);
+      });
+
+      const currentWrongCount = getPendingWrongWords(lib).length;
+      const focusCount = lib.words.filter(word => word.isFocus && word.wrongCount > 0).length;
+      const stubbornCount = lib.words.filter(word => word.isStubborn && word.wrongCount > 0).length;
+      const total = (record.taskWordIds || []).length;
+      const wrong = wrongSet.size;
+
+      return {
+        dayNumber: record.dayNumber,
+        total,
+        correct: Math.max(0, total - wrong),
+        wrong,
+        rate: total ? Math.round(((total - wrong) / total) * 100) : 0,
+        newWrong,
+        continuedWrong,
+        movedOut,
+        currentWrongCount,
+        focusCount,
+        stubbornCount,
+        learnedCount: lib.words.filter(word => word.firstLearnDay != null).length,
+        totalWords: lib.words.length,
+        nextDay: getNextDayNumber(lib) + 1
+      };
+    }
+
+    function applyWrongFlags(word) {
+      word.isFocus = word.manualFocus === null || word.manualFocus === undefined
+        ? Number(word.wrongCount || 0) >= 2
+        : Boolean(word.manualFocus);
+      word.isStubborn = word.manualStubborn === null || word.manualStubborn === undefined
+        ? Number(word.wrongCount || 0) >= 3
+        : Boolean(word.manualStubborn);
+    }
+
+    function recalculateLibraryState(lib = getCurrentLibrary()) {
+      if (!lib) return;
+      lib.words.forEach((word, index) => {
+        const manualFocus = word.manualFocus ?? null;
+        const manualStubborn = word.manualStubborn ?? null;
+        const wordText = word.word;
+        const meaning = word.meaning;
+        const id = word.id;
+        const originalIndex = Number.isFinite(word.index) ? word.index : index;
+        Object.assign(word, makeWord(wordText, meaning, originalIndex));
+        word.id = id;
+        word.manualFocus = manualFocus;
+        word.manualStubborn = manualStubborn;
+        applyWrongFlags(word);
+      });
+      lib.dailyRecords
+        .slice()
+        .sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber))
+        .forEach(record => updateWordStatsFromRecord(lib, record));
+      lib.currentDraftTask = null;
+      lib.updatedAt = todayDate();
+      saveData();
+    }
+
+    function removeWordIdFromTaskLike(task, wordId) {
+      if (!task) return;
+      [
+        "taskWordIds",
+        "newWordIds",
+        "pendingWrongWordIds",
+        "delayedReviewWordIds",
+        "postponedReviewWordIds",
+        "wrongWordIds"
+      ].forEach(key => {
+        if (Array.isArray(task[key])) {
+          task[key] = task[key].filter(id => id !== wordId);
+        }
+      });
+      if (task.sourceMap && typeof task.sourceMap === "object") {
+        delete task.sourceMap[wordId];
+      }
+    }
+
+    function deleteWordFromLibrary(lib, wordId) {
+      const word = getWordById(lib, wordId);
+      if (!word) return;
+      const hasRecords = lib.dailyRecords.some(record => {
+        return [
+          "taskWordIds",
+          "newWordIds",
+          "pendingWrongWordIds",
+          "delayedReviewWordIds",
+          "postponedReviewWordIds",
+          "wrongWordIds"
+        ].some(key => Array.isArray(record[key]) && record[key].includes(wordId));
+      });
+      const message = hasRecords
+        ? "确定删除“" + word.word + "”吗？它已经出现在历史听写记录中，删除后会从历史记录里移除并重新计算词库状态。"
+        : "确定删除“" + word.word + "”吗？";
+      if (!confirm(message)) return;
+      lib.words = lib.words.filter(item => item.id !== wordId);
+      lib.words.forEach((item, index) => item.index = index);
+      lib.dailyRecords.forEach(record => removeWordIdFromTaskLike(record, wordId));
+      removeWordIdFromTaskLike(lib.currentDraftTask, wordId);
+      lib.currentDraftTask = null;
+      if (manualStrictTask) removeWordIdFromTaskLike(manualStrictTask, wordId);
+      if (manualBatchSession?.currentTask) removeWordIdFromTaskLike(manualBatchSession.currentTask, wordId);
+      recalculateLibraryState(lib);
+      alert("已删除该单词，并重新计算词库状态。");
+      renderLibraryManager();
+    }
+
+    function addManualRecord(task, wrongWordIds, source = "manual") {
+      const lib = getCurrentLibrary();
+      if (!lib) return;
+      const existing = lib.dailyRecords.find(record => Number(record.dayNumber) === Number(task.dayNumber));
+      if (existing) {
+        const ok = confirm("Day " + task.dayNumber + " 已有记录。继续会覆盖这一天的历史记录，并重新计算词库状态。");
+        if (!ok) return;
+        lib.dailyRecords = lib.dailyRecords.filter(record => Number(record.dayNumber) !== Number(task.dayNumber));
+      }
+      const record = createDailyRecord(lib, task, wrongWordIds, source);
+      record.date = task.date || todayDate();
+      record.completedAt = task.completedAt || nowIso();
+      record.skipDelayedReviewSchedule = Boolean(task.skipDelayedReviewSchedule);
+      lib.dailyRecords.push(record);
+      recalculateLibraryState(lib);
+      manualStrictTask = null;
+      alert("已保存补录记录，并完成重新计算。");
+      renderManualUpdateView();
+    }
+
+    function buildManualBackfillTask(dayNumber, customNewCount = null) {
+      const lib = getCurrentLibrary();
+      const stateBefore = getLibraryStateBeforeDay(dayNumber);
+      const plannedNewCount = customNewCount == null
+        ? getPlannedNewWordCount(dayNumber, stateBefore)
+        : Math.max(0, Number(customNewCount || 0));
+      const limited = applyDailyLimit(
+        getPendingWrongWords(stateBefore),
+        getDueDelayedReviewWords(dayNumber, stateBefore),
+        getUnlearnedWords(stateBefore),
+        plannedNewCount,
+        stateBefore.settings
+      );
+      const sourceMap = {};
+
+      function addSource(ids, source) {
+        ids.forEach(id => {
+          sourceMap[id] = sourceMap[id] || [];
+          if (!sourceMap[id].includes(source)) sourceMap[id].push(source);
+        });
+      }
+
+      addSource(limited.pendingWrongWordIds, "wrong");
+      addSource(limited.delayedReviewWordIds, "review");
+      addSource(limited.newWordIds, "new");
+
+      const taskWordIds = orderTaskIds(Array.from(new Set([
+        ...limited.pendingWrongWordIds,
+        ...limited.delayedReviewWordIds,
+        ...limited.newWordIds
+      ])), lib);
+
+      return {
+        dayNumber: Number(dayNumber),
+        taskWordIds,
+        newWordIds: limited.newWordIds,
+        pendingWrongWordIds: limited.pendingWrongWordIds,
+        delayedReviewWordIds: limited.delayedReviewWordIds,
+        postponedReviewWordIds: limited.postponedReviewWordIds,
+        plannedNewCount: limited.plannedNewCount,
+        actualNewCount: limited.actualNewCount,
+        wrongOverflow: limited.wrongOverflow,
+        sourceMap
+      };
+    }
+
+    function startBatchManualBackfill() {
+      const lib = getCurrentLibrary();
+      if (!lib.words.length) {
+        alert("请先在词库中导入单词。");
+        return;
+      }
+      const startDay = Math.max(1, Number(document.getElementById("batchStartDay").value || getNextDayNumber(lib)));
+      const totalDays = Math.max(1, Number(document.getElementById("batchDays").value || 1));
+      const customValue = document.getElementById("batchNewCount").value.trim();
+      const customNewCount = customValue === "" ? null : Number(customValue);
+      const existingDays = lib.dailyRecords
+        .filter(record => Number(record.dayNumber) >= startDay && Number(record.dayNumber) < startDay + totalDays)
+        .map(record => record.dayNumber);
+      if (existingDays.length) {
+        const ok = confirm("这些 Day 已有记录：" + existingDays.join("、") + "。继续补录时，同一天保存会覆盖原记录并重新计算。");
+        if (!ok) return;
+      }
+      manualBatchSession = {
+        startDay,
+        totalDays,
+        currentOffset: 0,
+        customNewCount,
+        currentTask: buildManualBackfillTask(startDay, customNewCount)
+      };
+      renderBatchManualTab();
+    }
+
+    function saveBatchManualDay() {
+      const lib = getCurrentLibrary();
+      if (!manualBatchSession || !manualBatchSession.currentTask) return;
+      const task = manualBatchSession.currentTask;
+      const wrongIds = Array.from(document.querySelectorAll("[data-batch-wrong]:checked")).map(input => input.value);
+      const existing = lib.dailyRecords.find(record => Number(record.dayNumber) === Number(task.dayNumber));
+      if (existing) {
+        const ok = confirm("Day " + task.dayNumber + " 已有记录。保存会覆盖这一天并重新计算，确定吗？");
+        if (!ok) return;
+        lib.dailyRecords = lib.dailyRecords.filter(record => Number(record.dayNumber) !== Number(task.dayNumber));
+      }
+      const record = createDailyRecord(lib, task, wrongIds, "manual-batch");
+      lib.dailyRecords.push(record);
+      recalculateLibraryState(lib);
+
+      manualBatchSession.currentOffset += 1;
+      if (manualBatchSession.currentOffset >= manualBatchSession.totalDays) {
+        const finishedDays = manualBatchSession.totalDays;
+        manualBatchSession = null;
+        alert("连续补录完成：已保存 " + finishedDays + " 天，并按原规则重新计算错词池和错词本。");
+        renderBatchManualTab();
+        return;
+      }
+      const nextDay = manualBatchSession.startDay + manualBatchSession.currentOffset;
+      manualBatchSession.currentTask = buildManualBackfillTask(nextDay, manualBatchSession.customNewCount);
+      renderBatchManualTab();
+    }
+
+    function quickCalibrateProgress() {
+      const lib = getCurrentLibrary();
+      const count = Math.max(0, Math.min(lib.words.length, Number(document.getElementById("quickCount").value || 0)));
+      const scheduleReviews = document.getElementById("quickScheduleReviews").checked;
+      const wrongText = document.getElementById("quickWrongText").value;
+      if (!count) {
+        alert("请先输入已完成到第几个单词。");
+        return;
+      }
+      const ok = confirm("快速校准会追加近似历史记录，并重新计算词库状态。继续吗？");
+      if (!ok) return;
+
+      const wrongIds = new Set();
+      parseWordList(wrongText).forEach(item => {
+        const word = findWordByImportedItem(lib, item);
+        if (word && word.index < count) wrongIds.add(word.id);
+      });
+
+      let cursor = 0;
+      let day = getNextDayNumber(lib);
+      const newRecords = [];
+      while (cursor < count) {
+        const planned = getPlannedNewWordCount(day, lib);
+        const chunkSize = planned > 0 ? planned : 30;
+        const chunk = lib.words.slice(cursor, Math.min(count, cursor + chunkSize));
+        const taskIds = chunk.map(word => word.id);
+        const recordWrongIds = cursor + chunk.length >= count ? Array.from(wrongIds) : [];
+        const task = {
+          dayNumber: day,
+          taskWordIds: Array.from(new Set([...taskIds, ...recordWrongIds])),
+          newWordIds: taskIds,
+          pendingWrongWordIds: [],
+          delayedReviewWordIds: [],
+          postponedReviewWordIds: [],
+          sourceMap: Object.fromEntries(taskIds.map(id => [id, ["new"]])),
+          plannedNewCount: taskIds.length,
+          actualNewCount: taskIds.length,
+          skipDelayedReviewSchedule: !scheduleReviews
+        };
+        const record = createDailyRecord(lib, task, recordWrongIds, "quick");
+        record.skipDelayedReviewSchedule = !scheduleReviews;
+        newRecords.push(record);
+        cursor += chunk.length;
+        day += 1;
+      }
+      lib.dailyRecords.push(...newRecords);
+      recalculateLibraryState(lib);
+      alert("快速校准完成。");
+      renderManualUpdateView();
+    }
+
+    function manualUpdateWrongPool(wordId, updates) {
+      const lib = getCurrentLibrary();
+      const word = getWordById(lib, wordId);
+      if (!word) return;
+      if ("isPendingWrong" in updates) word.isPendingWrong = Boolean(updates.isPendingWrong);
+      if ("wrongCount" in updates) {
+        word.wrongCount = Math.max(0, Number(updates.wrongCount || 0));
+        if (word.wrongCount > 0 && !word.lastWrongDate) word.lastWrongDate = todayDate();
+      }
+      if ("manualFocus" in updates) word.manualFocus = updates.manualFocus;
+      if ("manualStubborn" in updates) word.manualStubborn = updates.manualStubborn;
+      if (word.isPendingWrong && word.wrongCount === 0) {
+        word.wrongCount = 1;
+        word.lastWrongDay = word.lastWrongDay || getNextDayNumber(lib) - 1 || 1;
+        word.lastWrongDate = word.lastWrongDate || todayDate();
+      }
+      applyWrongFlags(word);
+      lib.updatedAt = todayDate();
+      saveData();
+      renderApp();
+    }
+
+    function exportLibrary(libraryId = data.activeLibraryId) {
+      const lib = data.libraries.find(item => item.libraryId === libraryId);
+      return JSON.stringify(lib, null, 2);
+    }
+
+    function importLibrary(jsonText, replaceCurrent = false) {
+      let imported;
+      try {
+        imported = JSON.parse(jsonText);
+      } catch (error) {
+        alert("JSON 格式不正确。");
+        return;
+      }
+      if (!imported || !Array.isArray(imported.words)) {
+        alert("这不是有效的词库 JSON。");
+        return;
+      }
+      const ok = confirm(replaceCurrent ? "导入会覆盖当前词库，确定继续吗？" : "确定导入这个词库吗？");
+      if (!ok) return;
+      migrateLibrary(imported);
+      if (replaceCurrent) {
+        const currentId = data.activeLibraryId;
+        imported.libraryId = currentId;
+        data.libraries = data.libraries.map(lib => lib.libraryId === currentId ? imported : lib);
+      } else {
+        imported.libraryId = uid("lib");
+        imported.libraryName = imported.libraryName + "（导入）";
+        data.libraries.push(imported);
+        data.activeLibraryId = imported.libraryId;
+      }
+      saveData();
+      renderApp();
+    }
+
+    function exportAllData() {
+      return JSON.stringify(data, null, 2);
+    }
+
+    function importAllData(jsonText) {
+      let imported;
+      try {
+        imported = JSON.parse(jsonText);
+      } catch (error) {
+        alert("JSON 格式不正确。");
+        return;
+      }
+      if (!imported || !Array.isArray(imported.libraries)) {
+        alert("这不是有效的全部数据 JSON。");
+        return;
+      }
+      const first = confirm("导入全部数据会覆盖本网站当前所有数据。确定继续吗？");
+      if (!first) return;
+      const second = confirm("请再次确认：当前所有词库、进度和错词记录都会被替换。");
+      if (!second) return;
+      data = imported;
+      data.libraries.forEach(migrateLibrary);
+      if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
+      saveData();
+      renderApp();
+    }
+
+    function sourceTagHtml(sources) {
+      const list = Array.isArray(sources) ? sources : [sources];
+      if (list.length > 1) return '<span class="tag multi">多重来源</span>';
+      const source = list[0] || "new";
+      const cls = source === "wrong" ? "wrong" : source === "review" ? "review" : "new";
+      return '<span class="tag ' + cls + '">' + SOURCE_LABELS[source] + '</span>';
+    }
+
+    function renderApp() {
+      if (viewName === "manual") viewName = "tools";
+      renderNav();
+      renderLibrarySelect();
+      if (viewName === "library") renderLibraryManager();
+      else if (viewName === "today") renderTodayView();
+      else if (viewName === "wrong") renderWrongBook();
+      else if (viewName === "stats") renderStatistics();
+      else if (viewName === "settings") renderSettings();
+      else if (viewName === "tools" || viewName === "manual") renderToolsView();
+    }
+
+    function renderNav() {
+      const navItems = [
+        ["today", "今日听写"],
+        ["wrong", "错词本"],
+        ["library", "词库"],
+        ["stats", "统计"],
+        ["settings", "设置"],
+        ["tools", "工具"]
+      ];
+      document.getElementById("mainNav").innerHTML = navItems.map(item => {
+        return '<button class="nav-btn ' + (viewName === item[0] ? "active" : "") + '" data-view="' + item[0] + '">' + item[1] + '</button>';
+      }).join("");
+      document.querySelectorAll("[data-view]").forEach(button => {
+        button.addEventListener("click", () => {
+          stopAutoPlay();
+          viewName = button.dataset.view;
+          todaySummary = null;
+          renderApp();
+        });
+      });
+    }
+
+    function renderLibrarySelect() {
+      const select = document.getElementById("librarySelect");
+      select.innerHTML = data.libraries.map(lib => {
+        return '<option value="' + lib.libraryId + '"' + (lib.libraryId === data.activeLibraryId ? " selected" : "") + '>' + escapeHtml(lib.libraryName) + '</option>';
+      }).join("");
+      select.onchange = () => switchLibrary(select.value);
+    }
+
+    function renderStats(lib) {
+      const learned = lib.words.filter(word => word.firstLearnDay != null).length;
+      const pending = getPendingWrongWords(lib).length;
+      const history = lib.words.filter(word => word.wrongCount > 0).length;
+      const focus = lib.words.filter(word => word.isFocus && word.wrongCount > 0).length;
+      return [
+        ["学习 Day", getNextDayNumber(lib)],
+        ["已学 / 总数", learned + " / " + lib.words.length],
+        ["当前错词池", pending],
+        ["历史错词", history],
+        ["重点错词", focus]
+      ].map(item => '<div class="stat"><div class="small muted">' + item[0] + '</div><div class="num">' + item[1] + '</div></div>').join("");
+    }
+
+    function renderLibraryManager() {
+      const lib = getCurrentLibrary();
+      const app = document.getElementById("app");
+      app.innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <div class="row between">
+              <div>
+                <h2>词库</h2>
+                <div class="small muted">每个词库独立保存单词、计划、进度、错词和播放设置。</div>
+              </div>
+              <button id="newLibraryBtn">新建词库</button>
+            </div>
+          </section>
+
+          <section class="card span-12">
+            <div class="row between">
+              <h3>当前词库</h3>
+              <div class="row mobile-full" style="flex:1; justify-content:flex-end">
+                <label style="min-width:260px; max-width:420px">词库名称
+                  <input id="libraryNameInput" value="${escapeHtml(lib.libraryName)}">
+                </label>
+                <button id="renameLibraryBtn">保存名称</button>
+                <button class="danger" id="deleteLibraryBtn">删除词库</button>
+              </div>
+            </div>
+            <div class="stats" style="margin-top:12px">${renderStats(lib)}</div>
+          </section>
+
+          <section class="card span-12">
+            <h3>导入单词</h3>
+            <div class="stack">
+              <div class="notice small">推荐使用英文和中文之间加竖线 |，尤其是词组。这样可以避免 English phrase 被空格错误拆分。只有英文也可以导入，中文释义会留空。</div>
+              <textarea id="wordImportText" placeholder="achievement | 成就&#10;travel writer | 旅行作家&#10;research assistant | 研究员&#10;storage 储存"></textarea>
+              <div class="row mobile-full">
+                <button id="appendWordsBtn">追加到词库</button>
+                <button class="danger" id="replaceWordsBtn">清空并重建词库</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card span-12">
+            <div class="row between">
+              <h3>单词列表</h3>
+              <div class="row">
+                <span class="small muted">为了避免破坏历史记录，已学习词顺序已锁定。未学习词可以调整顺序，后续新词会按新顺序释放。</span>
+                <button class="secondary" id="repairPhraseSplitBtn">修复词组拆分</button>
+              </div>
+            </div>
+            ${renderWordsTable(lib)}
+          </section>
+        </div>
+      `;
+
+      document.getElementById("newLibraryBtn").onclick = () => {
+        const name = prompt("请输入新词库名称", "新词库");
+        if (name) createLibrary(name);
+      };
+      document.getElementById("renameLibraryBtn").onclick = () => {
+        lib.libraryName = document.getElementById("libraryNameInput").value.trim() || lib.libraryName;
+        lib.updatedAt = todayDate();
+        saveData();
+        renderApp();
+      };
+      document.getElementById("deleteLibraryBtn").onclick = () => deleteLibrary(lib.libraryId);
+      document.getElementById("appendWordsBtn").onclick = () => {
+        const result = importWordsToLibrary(lib, document.getElementById("wordImportText").value, "append");
+        alert("追加完成：新增 " + result.added + " 个，跳过重复 " + result.skipped + " 个。");
+        renderLibraryManager();
+      };
+      document.getElementById("replaceWordsBtn").onclick = () => {
+        const first = confirm("清空并重建会删除当前词库的学习进度、每日记录和错词记录。确定继续吗？");
+        if (!first) return;
+        const second = confirm("请再次确认：该词库会从粘贴内容重新开始。");
+        if (!second) return;
+        const result = importWordsToLibrary(lib, document.getElementById("wordImportText").value, "replace");
+        alert("重建完成：新增 " + result.added + " 个，跳过重复 " + result.skipped + " 个。");
+        renderLibraryManager();
+      };
+      document.getElementById("repairPhraseSplitBtn").onclick = () => {
+        const ok = confirm("将自动修复类似“travel / writer 旅行作家”的词组拆分。只会处理中文释义开头带英文片段的记录，确定继续吗？");
+        if (!ok) return;
+        const result = repairSplitPhraseMeanings(lib);
+        alert("修复完成：已修复 " + result.repaired + " 条，因重复跳过 " + result.skipped + " 条。");
+        renderLibraryManager();
+      };
+      bindWordTableEvents(lib);
+    }
+
+    function renderWordsTable(lib) {
+      if (!lib.words.length) return '<div class="empty">还没有单词。请先粘贴导入。</div>';
+      return `
+        <div class="table-wrap page-scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>英文</th>
+                <th>中文释义</th>
+                <th>首次学习</th>
+                <th>错词状态</th>
+                <th>排序管理</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${lib.words.map(word => renderWordRow(lib, word)).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderWordRow(lib, word) {
+      const locked = isWordLearnedLocked(lib, word);
+      const unlearnedWords = getSortableUnlearnedWords(lib);
+      const unlearnedPosition = unlearnedWords.findIndex(item => item.id === word.id) + 1;
+      return `
+        <tr>
+          <td>${word.index + 1}</td>
+          <td class="word-cell"><input data-word-text-id="${word.id}" value="${escapeHtml(word.word)}"></td>
+          <td class="meaning-cell"><input data-meaning-id="${word.id}" value="${escapeHtml(word.meaning)}"></td>
+          <td>${word.firstLearnDay == null ? "-" : "Day " + word.firstLearnDay}</td>
+          <td>${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : word.wrongCount > 0 ? '<span class="tag">历史错词</span>' : '<span class="tag ok">未错</span>'}</td>
+          <td>${locked ? '<span class="tag">已学习，顺序锁定</span>' : `
+            <div class="row">
+              <button class="ghost" data-move-word="${word.id}" data-move-direction="-1" ${unlearnedPosition <= 1 ? "disabled" : ""}>上移</button>
+              <button class="ghost" data-move-word="${word.id}" data-move-direction="1" ${unlearnedPosition >= unlearnedWords.length ? "disabled" : ""}>下移</button>
+              <span class="small muted">未学第</span>
+              <input style="width:92px" data-move-position="${word.id}" type="number" min="1" max="${unlearnedWords.length}" value="${unlearnedPosition}">
+            </div>
+          `}</td>
+          <td><button class="danger" data-delete-word-id="${word.id}">删除</button></td>
+        </tr>
+      `;
+    }
+
+    function isWordLearnedLocked(lib, word) {
+      if (word.firstLearnDay != null) return true;
+      return lib.dailyRecords.some(record => {
+        return ["newWordIds", "taskWordIds"].some(key => Array.isArray(record[key]) && record[key].includes(word.id));
+      });
+    }
+
+    function getSortableUnlearnedWords(lib) {
+      return lib.words
+        .filter(word => !isWordLearnedLocked(lib, word))
+        .sort((a, b) => a.index - b.index);
+    }
+
+    function applyUnlearnedOrder(lib, orderedUnlearnedWords) {
+      const queue = orderedUnlearnedWords.slice();
+      const nextWords = lib.words
+        .slice()
+        .sort((a, b) => a.index - b.index)
+        .map(word => isWordLearnedLocked(lib, word) ? word : queue.shift());
+      nextWords.forEach((word, index) => word.index = index);
+      lib.words.sort((a, b) => a.index - b.index);
+      lib.updatedAt = todayDate();
+      saveData();
+      renderLibraryManager();
+    }
+
+    function moveUnlearnedWord(lib, wordId, targetPosition) {
+      const unlearnedWords = getSortableUnlearnedWords(lib);
+      const currentIndex = unlearnedWords.findIndex(word => word.id === wordId);
+      if (currentIndex < 0) return;
+      const nextIndex = Math.max(0, Math.min(unlearnedWords.length - 1, Number(targetPosition) - 1));
+      if (nextIndex === currentIndex) return;
+      const [word] = unlearnedWords.splice(currentIndex, 1);
+      unlearnedWords.splice(nextIndex, 0, word);
+      applyUnlearnedOrder(lib, unlearnedWords);
+    }
+
+    function wordEditDuplicateExists(lib, currentWordId, wordText, meaning) {
+      const nextKey = getWordDuplicateKey(wordText, meaning);
+      return lib.words.some(word => word.id !== currentWordId && getWordDuplicateKey(word.word, word.meaning) === nextKey);
+    }
+
+    function bindWordTableEvents(lib) {
+      document.querySelectorAll("[data-delete-word-id]").forEach(button => {
+        button.addEventListener("click", () => {
+          deleteWordFromLibrary(lib, button.dataset.deleteWordId);
+        });
+      });
+      document.querySelectorAll("[data-move-word]").forEach(button => {
+        button.addEventListener("click", () => {
+          const unlearnedWords = getSortableUnlearnedWords(lib);
+          const currentIndex = unlearnedWords.findIndex(word => word.id === button.dataset.moveWord);
+          if (currentIndex < 0) return;
+          moveUnlearnedWord(lib, button.dataset.moveWord, currentIndex + 1 + Number(button.dataset.moveDirection || 0));
+        });
+      });
+      document.querySelectorAll("[data-move-position]").forEach(input => {
+        input.addEventListener("change", () => {
+          moveUnlearnedWord(lib, input.dataset.movePosition, Number(input.value || 1));
+        });
+      });
+      document.querySelectorAll("[data-word-text-id]").forEach(input => {
+        input.addEventListener("change", () => {
+          const word = getWordById(lib, input.dataset.wordTextId);
+          if (!word) return;
+          const nextWordText = input.value.trim();
+          if (!nextWordText) {
+            alert("英文不能为空。");
+            input.value = word.word;
+            return;
+          }
+          if (wordEditDuplicateExists(lib, word.id, nextWordText, word.meaning)) {
+            alert("已经存在完全相同的英文和中文释义，请不要重复。大小写不同或中文释义不同可以保存。");
+            input.value = word.word;
+            return;
+          }
+          if (isWordLearnedLocked(lib, word)) {
+            const ok = confirm("这个词已经出现在历史听写记录中。修改英文只会修正显示文本，不会改变历史 Day 记录。确定继续吗？");
+            if (!ok) {
+              input.value = word.word;
+              return;
+            }
+          }
+          word.word = nextWordText;
+          lib.updatedAt = todayDate();
+          saveData();
+        });
+      });
+      document.querySelectorAll("[data-meaning-id]").forEach(input => {
+        input.addEventListener("change", () => {
+          const word = getWordById(lib, input.dataset.meaningId);
+          if (word) {
+            const nextMeaning = input.value.trim();
+            if (wordEditDuplicateExists(lib, word.id, word.word, nextMeaning)) {
+              alert("已经存在完全相同的英文和中文释义，请不要重复。大小写不同或中文释义不同可以保存。");
+              input.value = word.meaning;
+              return;
+            }
+            word.meaning = nextMeaning;
+            lib.updatedAt = todayDate();
+            saveData();
+          }
+        });
+      });
+    }
+
+    function renderTodayView(mode = null) {
+      const lib = getCurrentLibrary();
+      const app = document.getElementById("app");
+      const task = lib.currentDraftTask;
+      const activeMode = mode || (todaySummary ? "summary" : task ? "player" : "intro");
+      if (task && activeMode === "player") {
+        dictationIndex = Math.min(Number(task.currentIndex || 0), Math.max(0, task.taskWordIds.length - 1));
+      }
+      const dayNumber = task?.dayNumber || getNextDayNumber(lib);
+      const pendingCount = getPendingWrongWords(lib).length;
+      const dueCount = getDueDelayedReviewWords(dayNumber, lib).length;
+      const learned = lib.words.filter(word => word.firstLearnDay != null).length;
+
+      if (activeMode === "summary" && todaySummary) {
+        app.innerHTML = renderSummary(lib, todaySummary);
+        document.getElementById("newTaskAfterSummary").onclick = () => {
+          todaySummary = null;
+          renderTodayView("intro");
+        };
+        const exportSummaryWrongButton = document.getElementById("exportSummaryWrongBtn");
+        if (exportSummaryWrongButton) {
+          exportSummaryWrongButton.onclick = () => {
+            const record = lib.dailyRecords.find(item => item.recordId === todaySummary.recordId);
+            exportWrongWordsCsv(lib, record, "本次没有错词可导出。");
+          };
+        }
+        return;
+      }
+
+      app.innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <div class="row between">
+              <div>
+                <h2>今日听写</h2>
+                <div class="small muted">${escapeHtml(lib.libraryName)} · 下一次完成后记为 Day ${dayNumber}</div>
+              </div>
+              <div class="row">
+                ${task ? '<button class="secondary" id="regenerateTaskBtn">按当前设置重新生成今日任务</button>' : ''}
+                <button id="buildTaskBtn">${task ? "继续今日听写" : "生成/开始今日听写"}</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card span-12">
+            <div class="stats">
+              <div class="stat"><div class="small muted">当前学习 Day</div><div class="num">${dayNumber}</div></div>
+              <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
+              <div class="stat"><div class="small muted">到期延迟复查</div><div class="num">${dueCount}</div></div>
+              <div class="stat"><div class="small muted">已学 / 总数</div><div class="num">${learned} / ${lib.words.length}</div></div>
+            </div>
+          </section>
+
+          ${task ? renderTaskPanel(lib, task, activeMode) : renderNoTaskPanel(lib)}
+        </div>
+      `;
+
+      document.getElementById("buildTaskBtn").onclick = () => startDictation();
+      const regenerateButton = document.getElementById("regenerateTaskBtn");
+      if (regenerateButton) regenerateButton.onclick = () => regenerateTodayTaskFromSettings();
+      const startButton = document.getElementById("startDictationBtn");
+      if (startButton) startButton.onclick = () => startDictation();
+      bindTaskDateInput(lib, task);
+      const exportTodayButton = document.getElementById("exportTodayTaskBtn");
+      if (exportTodayButton && task) exportTodayButton.onclick = () => exportTaskToCsv(lib, task);
+      bindPlayerEvents(lib, task);
+      bindSubmitEvents();
+    }
+
+    function bindTaskDateInput(lib, task) {
+      const input = document.getElementById("taskDateInput");
+      if (!input || !task) return;
+      input.onchange = () => {
+        task.date = input.value || todayDate();
+        lib.currentDraftTask = task;
+        saveData();
+      };
+    }
+
+    function saveCurrentDictationIndex() {
+      const lib = getCurrentLibrary();
+      const task = lib?.currentDraftTask;
+      if (!task) return;
+      task.currentIndex = Math.max(0, Number(dictationIndex || 0));
+      saveData();
+    }
+
+    function renderNoTaskPanel(lib) {
+      if (!lib.words.length) {
+        return '<section class="card span-12"><div class="empty">当前词库还没有单词。请先到词库导入。</div></section>';
+      }
+      const planned = getPlannedNewWordCount(getNextDayNumber(lib), lib);
+      const reviewCount = clampNumber(lib.settings.dailyReviewWords, 0, 100, 30);
+      return `
+        <section class="card span-12">
+          <div class="stack">
+            <div class="notice small">点击开始后会生成今日任务。任务生成后会保留在浏览器中，只有提交错词结果才算完成这一天。</div>
+            <div>当天新词数：<span class="strong">${planned}</span> 个；当天到期复查数：<span class="strong">${reviewCount}</span> 个。当前错词池会全部进入今日任务。</div>
+            ${lib.settings.pauseNewWords ? '<div class="notice">当前已暂停新词，今日只安排错词和到期复查。</div>' : ''}
+            <button id="startDictationBtn">生成/开始今日听写</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderTaskPanel(lib, task, mode) {
+      const dueActual = task.delayedReviewWordIds.length;
+      const notices = [];
+      if (lib.settings.pauseNewWords) notices.push("当前已暂停新词，今日只安排错词和到期复查。");
+      if (task.postponedReviewWordIds.length) {
+        notices.push("有 " + task.postponedReviewWordIds.length + " 个到期复查词超过当天到期复查数，已顺延到后续。");
+      }
+
+      return `
+        <section class="card span-12">
+          <div class="notice small" style="margin-bottom:12px">今日 ${task.taskWordIds.length} 个：新词 ${task.newWordIds.length} + 错词复习 ${task.pendingWrongWordIds.length} + 到期复查 ${dueActual}</div>
+          <div class="stats">
+            <div class="stat"><div class="small muted">今日总词数</div><div class="num">${task.taskWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${task.pendingWrongWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">今日到期复查</div><div class="num">${dueActual}</div></div>
+            <div class="stat"><div class="small muted">今日新词</div><div class="num">${task.newWordIds.length}</div></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <label style="max-width:220px">本次记录日期
+              <input id="taskDateInput" type="date" value="${escapeHtml(task.date || todayDate())}">
+            </label>
+            <button class="secondary" id="exportTodayTaskBtn">导出今日清单</button>
+            <span class="small muted">默认使用电脑日期，也可以手动改成实际听写日期。</span>
+          </div>
+          ${notices.map(text => '<div class="notice small" style="margin-top:10px">' + escapeHtml(text) + '</div>').join("")}
+        </section>
+        ${mode === "mark" ? renderMarkWrongPanel(lib, task) : renderPlayerPanel(lib, task)}
+      `;
+    }
+
+    function renderPlayerPanel(lib, task) {
+      const total = task.taskWordIds.length;
+      const currentId = task.taskWordIds[dictationIndex];
+      const currentWord = getWordById(lib, currentId);
+      if (!total) {
+        return '<section class="card span-12"><div class="empty">今天没有需要听写的单词。可以休息，或到词库追加新词。</div></section>';
+      }
+      return `
+        <section class="card span-12">
+          <div class="player">
+            <div>
+              <div class="progress-big">第 ${dictationIndex + 1} / ${total} 个</div>
+              <div class="word-hidden">听写过程中不显示英文和中文释义</div>
+            </div>
+            <div class="split" style="width:min(680px, 100%); text-align:left">
+              <label>语速：<span id="playerSpeechRateText">${Number(lib.settings.speechRate || 0.9).toFixed(1)}x</span>
+                <input id="playerSpeechRate" type="range" min="0.5" max="1.5" step="0.1" value="${escapeHtml(lib.settings.speechRate || 0.9)}">
+              </label>
+              <label>朗读声音
+                <select id="playerSpeechVoice" data-speech-voice-select>
+                  ${getSpeechVoiceOptionsHtml(lib.settings.speechVoiceName || "google-us")}
+                </select>
+              </label>
+            </div>
+            <div class="small muted">自动播放每个词播放 ${Number(lib.settings.autoPlayRepeatTimes || 1)} 次；如果声音听着不顺耳，可以在这里当场切换。</div>
+            <div class="stack" style="width:min(680px, 100%)">
+              <div class="row">
+                <button class="${lib.settings.showAnswerEnglish ? "secondary" : "ghost"}" id="toggleEnglishBtn">${lib.settings.showAnswerEnglish ? "隐藏英文" : "显示英文"}</button>
+                <button class="${lib.settings.showAnswerMeaning ? "secondary" : "ghost"}" id="toggleMeaningBtn">${lib.settings.showAnswerMeaning ? "隐藏中文释义" : "显示中文释义"}</button>
+              </div>
+              <div id="answerRevealBox" class="answer-grid">${renderAnswerRevealHtml(currentWord, lib)}</div>
+            </div>
+            <div class="row">
+              <button id="playCurrentBtn">播放 / 再听一遍</button>
+              <button class="ghost" id="prevWordBtn" ${dictationIndex <= 0 ? "disabled" : ""}>上一个</button>
+              <button class="ghost" id="nextWordBtn">${dictationIndex >= total - 1 ? "完成播放" : "下一个"}</button>
+              <button class="secondary" id="autoPlayBtn">自动播放</button>
+              <button class="secondary" id="stopAutoBtn">停止自动播放</button>
+            </div>
+            <div class="small muted">键盘左箭头：上一个并播放；右箭头：下一个并播放。</div>
+            <button class="danger" id="goMarkBtn">全部播放完成，进入标记错误</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderAnswerRevealHtml(word, lib) {
+      const pieces = [];
+      if (lib.settings.showAnswerEnglish) {
+        pieces.push('<div class="notice"><span class="strong">英文：</span>' + escapeHtml(word?.word || "") + '</div>');
+      }
+      if (lib.settings.showAnswerMeaning) {
+        pieces.push('<div class="notice"><span class="strong">中文释义：</span>' + escapeHtml(word?.meaning || "无") + '</div>');
+      }
+      return pieces.join("") || '<div class="small muted" style="grid-column:1 / -1">默认隐藏答案。打开开关后，下一词也会保持显示。</div>';
+    }
+
+    function renderMarkWrongPanel(lib, task) {
+      return `
+        <section class="card span-12">
+          <div class="row between">
+            <div>
+              <h3>统一标记错误</h3>
+              <div class="small muted">只勾选写错的单词。未勾选默认本次写对。</div>
+            </div>
+            <button id="submitResultBtn">提交今日结果</button>
+          </div>
+          <div class="table-wrap page-scroll-table" style="margin-top:12px">
+            <table>
+              <thead>
+                <tr>
+                  <th>错</th>
+                  <th>#</th>
+                  <th>英文</th>
+                  <th>中文释义</th>
+                  <th>来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${task.taskWordIds.map(id => {
+                  const word = getWordById(lib, id);
+                  const sources = task.sourceMap[id] || ["new"];
+                  return `
+                    <tr>
+                      <td><input type="checkbox" data-wrong-check value="${id}"></td>
+                      <td>${word ? word.index + 1 : "-"}</td>
+                      <td class="word-cell">${escapeHtml(word?.word || id)}</td>
+                      <td>${escapeHtml(word?.meaning || "")}</td>
+                      <td>${sourceTagHtml(sources)}</td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+    }
+
+    function bindPlayerEvents(lib, task) {
+      if (!task) return;
+      const currentId = task.taskWordIds[dictationIndex];
+      const currentWord = getWordById(lib, currentId);
+      const play = () => currentWord && speakWord(currentWord.word);
+      const playButton = document.getElementById("playCurrentBtn");
+      if (playButton) playButton.onclick = play;
+      const goAndPlay = direction => {
+        playAdjacentFromKeyboard(direction);
+      };
+      const prevButton = document.getElementById("prevWordBtn");
+      if (prevButton) prevButton.onclick = () => goAndPlay(-1);
+      const nextButton = document.getElementById("nextWordBtn");
+      if (nextButton) nextButton.onclick = () => {
+        if (dictationIndex >= task.taskWordIds.length - 1) {
+          stopAutoPlay();
+          renderTodayView("mark");
+        } else {
+          goAndPlay(1);
+        }
+      };
+      const autoButton = document.getElementById("autoPlayBtn");
+      if (autoButton) autoButton.onclick = () => startAutoPlay();
+      const stopButton = document.getElementById("stopAutoBtn");
+      if (stopButton) stopButton.onclick = () => stopAutoPlay();
+      const markButton = document.getElementById("goMarkBtn");
+      if (markButton) markButton.onclick = () => {
+        stopAutoPlay();
+        renderTodayView("mark");
+      };
+      const rateInput = document.getElementById("playerSpeechRate");
+      const rateText = document.getElementById("playerSpeechRateText");
+      if (rateInput) {
+        rateInput.oninput = () => {
+          const value = clampNumber(rateInput.value, 0.5, 1.5, 0.9);
+          lib.settings.speechRate = value;
+          if (rateText) rateText.textContent = value.toFixed(1) + "x";
+          saveData();
+        };
+        rateInput.onchange = play;
+      }
+      const voiceSelect = document.getElementById("playerSpeechVoice");
+      if (voiceSelect) {
+        voiceSelect.onchange = () => {
+          lib.settings.speechVoiceName = voiceSelect.value || "google-us";
+          saveData();
+          play();
+        };
+      }
+      const revealBox = document.getElementById("answerRevealBox");
+      const toggleEnglishButton = document.getElementById("toggleEnglishBtn");
+      const toggleMeaningButton = document.getElementById("toggleMeaningBtn");
+      const refreshReveal = () => {
+        if (revealBox) revealBox.innerHTML = renderAnswerRevealHtml(currentWord, lib);
+        if (toggleEnglishButton) {
+          toggleEnglishButton.textContent = lib.settings.showAnswerEnglish ? "隐藏英文" : "显示英文";
+          toggleEnglishButton.className = lib.settings.showAnswerEnglish ? "secondary" : "ghost";
+        }
+        if (toggleMeaningButton) {
+          toggleMeaningButton.textContent = lib.settings.showAnswerMeaning ? "隐藏中文释义" : "显示中文释义";
+          toggleMeaningButton.className = lib.settings.showAnswerMeaning ? "secondary" : "ghost";
+        }
+      };
+      if (toggleEnglishButton) {
+        toggleEnglishButton.onclick = () => {
+          lib.settings.showAnswerEnglish = !lib.settings.showAnswerEnglish;
+          saveData();
+          refreshReveal();
+        };
+      }
+      if (toggleMeaningButton) {
+        toggleMeaningButton.onclick = () => {
+          lib.settings.showAnswerMeaning = !lib.settings.showAnswerMeaning;
+          saveData();
+          refreshReveal();
+        };
+      }
+    }
+
+    function bindSubmitEvents() {
+      const submitButton = document.getElementById("submitResultBtn");
+      if (submitButton) submitButton.onclick = () => {
+        const ok = confirm("确定提交今日结果吗？提交后会计入一个学习 Day。");
+        if (ok) submitTodayResult();
+      };
+    }
+
+    function startAutoPlay() {
+      const lib = getCurrentLibrary();
+      const task = lib.currentDraftTask;
+      if (!task) return;
+      stopAutoPlay();
+      const intervalMs = Number(lib.settings.autoPlayIntervalSeconds || 5) * 1000;
+      const repeatTimes = Math.max(1, Math.min(10, Number(lib.settings.autoPlayRepeatTimes || 1)));
+      const repeatGapMs = Math.max(900, Math.min(intervalMs, 1800));
+      const playAndAdvance = () => {
+        const currentId = task.taskWordIds[dictationIndex];
+        const word = getWordById(lib, currentId);
+        let played = 0;
+        const playRepeat = () => {
+          if (word) speakWord(word.word);
+          played += 1;
+          if (played < repeatTimes) {
+            autoTimer = setTimeout(playRepeat, repeatGapMs);
+            return;
+          }
+          if (dictationIndex >= task.taskWordIds.length - 1) {
+            stopAutoPlay();
+            setTimeout(() => renderTodayView("mark"), Math.max(1200, intervalMs));
+            return;
+          }
+          dictationIndex += 1;
+          saveCurrentDictationIndex();
+          autoTimer = setTimeout(() => {
+            renderTodayView("player");
+            playAndAdvance();
+          }, intervalMs);
+        };
+        playRepeat();
+      };
+      playAndAdvance();
+    }
+
+    function stopAutoPlay() {
+      if (autoTimer) clearTimeout(autoTimer);
+      autoTimer = null;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    }
+
+    function isTypingTarget(target) {
+      const tag = String(target?.tagName || "").toLowerCase();
+      return ["input", "textarea", "select"].includes(tag) || Boolean(target?.isContentEditable);
+    }
+
+    function playAdjacentFromKeyboard(direction) {
+      const lib = getCurrentLibrary();
+      const task = lib?.currentDraftTask;
+      if (viewName !== "today" || todaySummary || !task || !task.taskWordIds?.length) return;
+      const nextIndex = dictationIndex + direction;
+      if (nextIndex < 0) return;
+      if (nextIndex >= task.taskWordIds.length) {
+        stopAutoPlay();
+        renderTodayView("mark");
+        return;
+      }
+      stopAutoPlay();
+      dictationIndex = nextIndex;
+      saveCurrentDictationIndex();
+      renderTodayView("player");
+      setTimeout(() => {
+        const nextLib = getCurrentLibrary();
+        const nextTask = nextLib?.currentDraftTask;
+        const nextId = nextTask?.taskWordIds?.[dictationIndex];
+        const nextWord = nextId ? getWordById(nextLib, nextId) : null;
+        if (nextWord) speakWord(nextWord.word);
+      }, 60);
+    }
+
+    function renderSummary(lib, summary) {
+      const wordList = ids => ids.length
+        ? ids.map(id => escapeHtml(getWordById(lib, id)?.word || id)).join("、")
+        : "无";
+      return `
+        <div class="grid">
+          <section class="card span-12">
+            <h2>今日总结 · Day ${summary.dayNumber}</h2>
+            <div class="success">已保存今日听写结果。</div>
+          </section>
+          <section class="card span-12">
+            <div class="stats">
+              <div class="stat"><div class="small muted">今日总词数</div><div class="num">${summary.total}</div></div>
+              <div class="stat"><div class="small muted">正确数量</div><div class="num">${summary.correct}</div></div>
+              <div class="stat"><div class="small muted">错误数量</div><div class="num">${summary.wrong}</div></div>
+              <div class="stat"><div class="small muted">正确率</div><div class="num">${summary.rate}%</div></div>
+              <div class="stat"><div class="small muted">当前错词池</div><div class="num">${summary.currentWrongCount}</div></div>
+              <div class="stat"><div class="small muted">重点错词</div><div class="num">${summary.focusCount}</div></div>
+              <div class="stat"><div class="small muted">顽固错词</div><div class="num">${summary.stubbornCount}</div></div>
+              <div class="stat"><div class="small muted">已学 / 总数</div><div class="num">${summary.learnedCount} / ${summary.totalWords}</div></div>
+            </div>
+          </section>
+          <section class="card span-12">
+            <div class="stack">
+              <div><span class="strong">本日新增错词：</span>${wordList(summary.newWrong)}</div>
+              <div><span class="strong">本日继续错误的旧错词：</span>${wordList(summary.continuedWrong)}</div>
+              <div><span class="strong">本日改对并移出错词池：</span>${wordList(summary.movedOut)}</div>
+              <div><span class="strong">下一次预计学习 Day：</span>${getNextDayNumber(lib)}</div>
+              ${renderLatestResultWrongWords(lib, summary)}
+              <button class="secondary" id="exportSummaryWrongBtn">导出本次错词 CSV</button>
+              <button id="newTaskAfterSummary">返回今日听写</button>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function renderLatestResultWrongWords(lib, summary) {
+      const record = lib.dailyRecords.find(item => item.recordId === summary.recordId);
+      const details = record ? getWrongWordsForRecord(lib, record) : [];
+      if (!details.length) {
+        return `
+          <div class="stack" style="margin-top:10px">
+            <h3>本次错词</h3>
+            <div class="empty">本次没有错词。</div>
+          </div>
+        `;
+      }
+      return `
+        <div class="stack" style="margin-top:10px">
+          <h3>本次错词</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>英文</th><th>中文释义</th><th>来源</th><th>累计错误次数</th></tr></thead>
+              <tbody>
+                ${details.map(item => `
+                  <tr>
+                    <td class="word-cell">${escapeHtml(item.entryText)}</td>
+                    <td>${escapeHtml(item.meaning)}</td>
+                    <td>${escapeHtml(item.sourceLabel)}</td>
+                    <td>${item.wrongCount}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderWrongBook() {
+      const lib = getCurrentLibrary();
+      const filter = document.getElementById("wrongFilter")?.value || "all";
+      const sort = document.getElementById("wrongSort")?.value || "count";
+      let words = lib.words.filter(word => word.wrongCount > 0 || word.isPendingWrong);
+      if (filter === "pending") words = words.filter(word => word.isPendingWrong);
+      if (filter === "focus") words = words.filter(word => word.isFocus);
+      if (filter === "stubborn") words = words.filter(word => word.isStubborn);
+      words.sort((a, b) => {
+        if (sort === "recent") return String(b.lastWrongDate || "").localeCompare(String(a.lastWrongDate || ""));
+        if (sort === "index") return a.index - b.index;
+        if (sort === "first") return (a.firstLearnDay || 999999) - (b.firstLearnDay || 999999);
+        return (b.wrongCount || 0) - (a.wrongCount || 0);
+      });
+
+      document.getElementById("app").innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <div class="row between">
+              <div>
+                <h2>错词本</h2>
+                <div class="small muted">这里保留历史上所有曾经错过的词，和当前错词池分开管理。</div>
+                <div class="small muted">移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。如果这个词是当时误标为错误，请到 工具 → 历史记录修改 中修正对应 Day 的错词勾选，系统会自动重算错误次数和错词池。</div>
+              </div>
+              <div class="row">
+                <label>筛选
+                  <select id="wrongFilter">
+                    <option value="all">全部错词</option>
+                    <option value="pending">当前错词池</option>
+                    <option value="focus">重点错词</option>
+                    <option value="stubborn">顽固错词</option>
+                  </select>
+                </label>
+                <label>排序
+                  <select id="wrongSort">
+                    <option value="count">按错误次数从高到低</option>
+                    <option value="recent">按最近错误日期从近到远</option>
+                    <option value="index">按导入顺序</option>
+                    <option value="first">按第一次学习 Day</option>
+                  </select>
+                </label>
+                <button class="secondary" id="exportWrongWordsBtn">导出当前筛选错词</button>
+              </div>
+            </div>
+          </section>
+          <section class="card span-12">
+            ${renderWrongTable(lib, words)}
+          </section>
+        </div>
+      `;
+      document.getElementById("wrongFilter").value = filter;
+      document.getElementById("wrongSort").value = sort;
+      document.getElementById("wrongFilter").onchange = renderWrongBook;
+      document.getElementById("wrongSort").onchange = renderWrongBook;
+      document.getElementById("exportWrongWordsBtn").onclick = () => {
+        const filterLabels = { all: "全部", pending: "当前错词池", focus: "重点", stubborn: "顽固" };
+        exportWrongWordsToCsv(lib, words, filterLabels[filter] || "错词");
+      };
+      bindWrongActions();
+    }
+
+    function renderWrongTable(lib, words) {
+      if (!words.length) return '<div class="empty">当前筛选下没有错词。</div>';
+      return `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>英文</th>
+                <th>中文释义</th>
+                <th>错误次数</th>
+                <th>最近错误</th>
+                <th>状态</th>
+                <th>首次学习</th>
+                <th>延迟复查</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${words.map(word => `
+                <tr>
+                  <td class="word-cell">${escapeHtml(word.word)}</td>
+                  <td>${escapeHtml(word.meaning || "")}</td>
+                  <td><input style="width:80px" type="number" min="0" data-wrong-count="${word.id}" value="${word.wrongCount}"></td>
+                  <td>Day ${word.lastWrongDay || "-"}<br><span class="small muted">${word.lastWrongDate || "-"}</span></td>
+                  <td>
+                    ${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : '<span class="tag">历史错词</span>'}
+                    ${word.isFocus ? '<span class="tag review">重点</span>' : ''}
+                    ${word.isStubborn ? '<span class="tag wrong">顽固</span>' : ''}
+                  </td>
+                  <td>${word.firstLearnDay == null ? "-" : "Day " + word.firstLearnDay}</td>
+                  <td>${renderReviewStatus(word)}</td>
+                  <td class="actions-cell">
+                    <div class="row">
+                      <button class="secondary" data-toggle-pending="${word.id}" title="移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。">${word.isPendingWrong ? "移出错词池" : "加入错词池"}</button>
+                      <button class="ghost" data-toggle-focus="${word.id}">${word.isFocus ? "取消重点" : "设为重点"}</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function renderReviewStatus(word) {
+      if (word.firstLearnDay == null) return "-";
+      if (word.delayedReviewCompleted) return '<span class="tag ok">已完成</span>';
+      if (word.delayedReviewDay == null) return '<span class="tag">未安排</span>';
+      if (word.delayedReviewPostponed) return '<span class="tag review">已顺延到期</span>';
+      return '<span class="tag review">Day ' + word.delayedReviewDay + '</span>';
+    }
+
+    function bindWrongActions() {
+      const lib = getCurrentLibrary();
+      document.querySelectorAll("[data-toggle-pending]").forEach(button => {
+        button.onclick = () => {
+          const word = getWordById(lib, button.dataset.togglePending);
+          manualUpdateWrongPool(word.id, { isPendingWrong: !word.isPendingWrong });
+        };
+      });
+      document.querySelectorAll("[data-toggle-focus]").forEach(button => {
+        button.onclick = () => {
+          const word = getWordById(lib, button.dataset.toggleFocus);
+          manualUpdateWrongPool(word.id, { manualFocus: !word.isFocus });
+        };
+      });
+      document.querySelectorAll("[data-wrong-count]").forEach(input => {
+        input.onchange = () => manualUpdateWrongPool(input.dataset.wrongCount, { wrongCount: input.value });
+      });
+    }
+
+    function renderManualUpdateView() {
+      const lib = getCurrentLibrary();
+      document.getElementById("app").innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <h2>手动校准</h2>
+            <div class="notice small">连续按天补录适合已经知道 Day 1、Day 2、Day 3 分别错了哪些词的情况。每天保存后，系统会按原规则自动处理错词池、错词本和后续复习。</div>
+          </section>
+          <section class="card span-12">
+            <div class="tabs">
+              <button class="secondary" data-manual-tab="batch">连续按天补录</button>
+              <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
+              <button class="secondary" data-manual-tab="quick">模式 2：快速校准已学进度</button>
+              <button class="secondary" data-manual-tab="pool">模式 3：手动维护错词池</button>
+              <button class="secondary" data-manual-tab="history">历史记录修改</button>
+            </div>
+            <div id="manualContent"></div>
+          </section>
+        </div>
+      `;
+      document.querySelectorAll("[data-manual-tab]").forEach(button => {
+        button.onclick = () => renderManualTab(button.dataset.manualTab);
+      });
+      renderManualTab("batch");
+    }
+
+    function renderManualTab(tab) {
+      if (tab === "batch") renderBatchManualTab();
+      else if (tab === "quick") renderQuickCalibrateTab();
+      else if (tab === "pool") renderManualPoolTab();
+      else if (tab === "history") renderHistoryEditTab();
+      else renderStrictManualTab();
+    }
+
+    function getLibraryStateBeforeDay(dayNumber) {
+      const lib = clone(getCurrentLibrary());
+      migrateLibrary(lib);
+      lib.dailyRecords = lib.dailyRecords.filter(record => Number(record.dayNumber) < Number(dayNumber));
+      recalculateCloneState(lib);
+      return lib;
+    }
+
+    function recalculateCloneState(lib) {
+      lib.words.forEach((word, index) => {
+        const id = word.id;
+        const manualFocus = word.manualFocus ?? null;
+        const manualStubborn = word.manualStubborn ?? null;
+        Object.assign(word, makeWord(word.word, word.meaning, Number.isFinite(word.index) ? word.index : index));
+        word.id = id;
+        word.manualFocus = manualFocus;
+        word.manualStubborn = manualStubborn;
+        applyWrongFlags(word);
+      });
+      lib.dailyRecords
+        .slice()
+        .sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber))
+        .forEach(record => updateWordStatsFromRecord(lib, record));
+    }
+
+    function renderBatchManualTab() {
+      const lib = getCurrentLibrary();
+      const content = document.getElementById("manualContent");
+      if (!manualBatchSession || !manualBatchSession.currentTask) {
+        content.innerHTML = `
+          <div class="stack">
+            <div class="notice small">
+              适合补录连续几天的真实听写结果。系统会先生成 Day 1 的完整清单，你勾当天错词；保存后自动生成 Day 2，并带入 Day 1 后仍在错词池里的词。
+            </div>
+            <div class="split">
+              <label>从 Day 几开始补录
+                <input id="batchStartDay" type="number" min="1" value="${getNextDayNumber(lib)}">
+              </label>
+              <label>连续补录几天
+                <input id="batchDays" type="number" min="1" value="3">
+              </label>
+            </div>
+            <label>每天新词数
+              <input id="batchNewCount" type="number" min="0" placeholder="留空则按当天新词数自动生成">
+            </label>
+            <div class="small muted">如果你前三天每天就是 30 个新词，可以填 30；如果本来就按设置里的“当天新词数”走，留空即可。</div>
+            <button id="startBatchBackfillBtn">开始连续补录</button>
+          </div>
+        `;
+        document.getElementById("startBatchBackfillBtn").onclick = startBatchManualBackfill;
+        return;
+      }
+
+      const task = manualBatchSession.currentTask;
+      const current = manualBatchSession.currentOffset + 1;
+      const notices = [];
+      if (task.actualNewCount < task.plannedNewCount) {
+        notices.push("当天复习词较多，原计划新词 " + task.plannedNewCount + " 个，实际安排 " + task.actualNewCount + " 个。");
+      }
+      if (task.postponedReviewWordIds.length) {
+        notices.push("有 " + task.postponedReviewWordIds.length + " 个延迟复查词顺延到后续。");
+      }
+      if (task.wrongOverflow) {
+        notices.push("当天错词池会全部保留。");
+      }
+
+      content.innerHTML = `
+        <div class="stack">
+          <div class="row between">
+            <div>
+              <h3>补录 Day ${task.dayNumber}</h3>
+              <div class="small muted">第 ${current} / ${manualBatchSession.totalDays} 天。只勾选这一天实际写错的词。</div>
+            </div>
+            <div class="row">
+              <button id="saveBatchDayBtn">保存这一天，生成下一天</button>
+              <button class="danger" id="cancelBatchBtn">结束补录</button>
+            </div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="small muted">当天总词数</div><div class="num">${task.taskWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">已勾选错词</div><div class="num" id="batchWrongCountText">0</div></div>
+            <div class="stat"><div class="small muted">错词池带入</div><div class="num">${task.pendingWrongWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">延迟复查</div><div class="num">${task.delayedReviewWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">当天新词</div><div class="num">${task.newWordIds.length}</div></div>
+          </div>
+          ${notices.map(text => '<div class="notice small">' + escapeHtml(text) + '</div>').join("")}
+          ${task.taskWordIds.length ? renderBatchTaskTable(lib, task) : '<div class="empty">这一天没有可补录的单词。可以结束补录，或到词库追加单词。</div>'}
+        </div>
+      `;
+      const saveButton = document.getElementById("saveBatchDayBtn");
+      if (saveButton) saveButton.onclick = saveBatchManualDay;
+      bindWrongSelectionCounter("[data-batch-wrong]", "batchWrongCountText");
+      document.getElementById("cancelBatchBtn").onclick = () => {
+        const ok = confirm("确定结束本次连续补录吗？已经保存的 Day 会保留。");
+        if (!ok) return;
+        manualBatchSession = null;
+        renderBatchManualTab();
+      };
+    }
+
+    function renderBatchTaskTable(lib, task) {
+      return `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>当天写错</th>
+                <th>#</th>
+                <th>英文</th>
+                <th>中文释义</th>
+                <th>来源</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${task.taskWordIds.map(id => {
+                const word = getWordById(lib, id);
+                return `
+                  <tr>
+                    <td><input type="checkbox" data-batch-wrong value="${id}"></td>
+                    <td>${word ? word.index + 1 : "-"}</td>
+                    <td class="word-cell">${escapeHtml(word?.word || id)}</td>
+                    <td>${escapeHtml(word?.meaning || "")}</td>
+                    <td>${sourceTagHtml(task.sourceMap[id] || ["new"])}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function bindWrongSelectionCounter(selector, targetId) {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const update = () => {
+        target.textContent = document.querySelectorAll(selector + ":checked").length;
+      };
+      document.querySelectorAll(selector).forEach(input => {
+        input.addEventListener("change", update);
+      });
+      update();
+    }
+
+    function renderStrictManualTab() {
+      const lib = getCurrentLibrary();
+      const content = document.getElementById("manualContent");
+      content.innerHTML = `
+        <div class="stack">
+          <div class="notice small">高级补录用于某一天的新词范围不符合当天新词数时手动指定。普通补录请使用“连续按天补录”。</div>
+          <div class="split">
+            <label>补录 Day
+              <input id="strictDay" type="number" min="1" value="${getNextDayNumber(lib)}">
+            </label>
+            <label>新词范围，例如 1-30
+              <input id="strictRange" placeholder="1-30">
+            </label>
+          </div>
+          <div class="row mobile-full">
+            <button id="buildStrictTaskBtn">生成补录任务</button>
+            <button class="ghost" id="strictUseSelectionBtn">从下方任意勾选新词生成</button>
+          </div>
+          <div class="table-wrap" style="max-height:220px">
+            <table>
+              <thead><tr><th>选为新词</th><th>#</th><th>英文</th><th>中文释义</th></tr></thead>
+              <tbody>
+                ${lib.words.map(word => `
+                  <tr>
+                    <td><input type="checkbox" data-strict-new="${word.id}"></td>
+                    <td>${word.index + 1}</td>
+                    <td class="word-cell">${escapeHtml(word.word)}</td>
+                    <td>${escapeHtml(word.meaning || "")}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+          <div id="strictTaskArea">${manualStrictTask ? renderStrictTaskArea(getCurrentLibrary(), manualStrictTask) : ""}</div>
+        </div>
+      `;
+      document.getElementById("buildStrictTaskBtn").onclick = () => buildStrictManualTask(false);
+      document.getElementById("strictUseSelectionBtn").onclick = () => buildStrictManualTask(true);
+      bindStrictSubmit();
+    }
+
+    function buildStrictManualTask(useSelection) {
+      const lib = getCurrentLibrary();
+      const dayNumber = Number(document.getElementById("strictDay").value || 1);
+      const stateBefore = getLibraryStateBeforeDay(dayNumber);
+      let newIds = [];
+      if (useSelection) {
+        newIds = Array.from(document.querySelectorAll("[data-strict-new]:checked")).map(input => input.dataset.strictNew);
+      } else {
+        const rangeText = document.getElementById("strictRange").value.trim();
+        const match = rangeText.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+        if (!match) {
+          alert("请输入类似 1-30 的范围，或使用任意勾选。");
+          return;
+        }
+        const start = Math.max(1, Number(match[1]));
+        const end = Math.min(lib.words.length, Number(match[2]));
+        newIds = lib.words.filter(word => word.index + 1 >= start && word.index + 1 <= end).map(word => word.id);
+      }
+      const pendingIds = getPendingWrongWords(stateBefore).map(word => word.id);
+      const dueIds = getDueDelayedReviewWords(dayNumber, stateBefore).map(word => word.id);
+      const taskIds = Array.from(new Set([...pendingIds, ...dueIds, ...newIds]));
+      const sourceMap = {};
+      pendingIds.forEach(id => sourceMap[id] = [...(sourceMap[id] || []), "wrong"]);
+      dueIds.forEach(id => sourceMap[id] = [...(sourceMap[id] || []), "review"]);
+      newIds.forEach(id => sourceMap[id] = [...(sourceMap[id] || []), "new"]);
+      manualStrictTask = {
+        dayNumber,
+        taskWordIds: orderTaskIds(taskIds, lib),
+        newWordIds: newIds,
+        pendingWrongWordIds: pendingIds,
+        delayedReviewWordIds: dueIds,
+        postponedReviewWordIds: [],
+        sourceMap,
+        plannedNewCount: newIds.length,
+        actualNewCount: newIds.length
+      };
+      document.getElementById("strictTaskArea").innerHTML = renderStrictTaskArea(lib, manualStrictTask);
+      bindStrictSubmit();
+    }
+
+    function renderStrictTaskArea(lib, task) {
+      return `
+        <div class="card" style="box-shadow:none">
+          <div class="row between">
+            <div>
+              <h3>补录 Day ${task.dayNumber} 完整任务</h3>
+              <div class="small muted">已自动带入当时应该在错词池里的词，并加入到期复查词。</div>
+              <div class="small strong">已勾选错词：<span id="strictWrongCountText">0</span> 个</div>
+            </div>
+            <button id="submitStrictRecordBtn">提交补录记录</button>
+          </div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table>
+              <thead><tr><th>实际写错</th><th>英文</th><th>中文释义</th><th>来源</th></tr></thead>
+              <tbody>
+                ${task.taskWordIds.map(id => {
+                  const word = getWordById(lib, id);
+                  return `
+                    <tr>
+                      <td><input type="checkbox" data-strict-wrong value="${id}"></td>
+                      <td class="word-cell">${escapeHtml(word?.word || id)}</td>
+                      <td>${escapeHtml(word?.meaning || "")}</td>
+                      <td>${sourceTagHtml(task.sourceMap[id] || ["new"])}</td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function bindStrictSubmit() {
+      const button = document.getElementById("submitStrictRecordBtn");
+      if (!button) return;
+      bindWrongSelectionCounter("[data-strict-wrong]", "strictWrongCountText");
+      button.onclick = () => {
+        const wrongIds = Array.from(document.querySelectorAll("[data-strict-wrong]:checked")).map(input => input.value);
+        addManualRecord(manualStrictTask, wrongIds, "manual");
+      };
+    }
+
+    function renderQuickCalibrateTab() {
+      const lib = getCurrentLibrary();
+      document.getElementById("manualContent").innerHTML = `
+        <div class="stack">
+          <label>已完成到第几个单词
+            <input id="quickCount" type="number" min="1" max="${lib.words.length}" placeholder="例如 90">
+          </label>
+          <label class="checkbox-row">
+            <input id="quickScheduleReviews" type="checkbox" checked>
+            为这些已学词安排延迟复查
+          </label>
+          <label>已知错词，可粘贴英文或“英文 中文释义”
+            <textarea id="quickWrongText" placeholder="achievement&#10;storage"></textarea>
+          </label>
+          <button id="quickCalibrateBtn">执行快速校准</button>
+        </div>
+      `;
+      document.getElementById("quickCalibrateBtn").onclick = quickCalibrateProgress;
+    }
+
+    function renderManualPoolTab() {
+      const lib = getCurrentLibrary();
+      document.getElementById("manualContent").innerHTML = `
+        <div class="notice small">可手动加入或移出当前错词池，也可调整错误次数、重点和顽固标记。</div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead>
+              <tr><th>#</th><th>英文</th><th>中文释义</th><th>错误次数</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              ${lib.words.map(word => `
+                <tr>
+                  <td>${word.index + 1}</td>
+                  <td class="word-cell">${escapeHtml(word.word)}</td>
+                  <td>${escapeHtml(word.meaning || "")}</td>
+                  <td><input style="width:80px" type="number" min="0" data-manual-count="${word.id}" value="${word.wrongCount}"></td>
+                  <td>
+                    ${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : '<span class="tag">非当前错词</span>'}
+                    ${word.isFocus ? '<span class="tag review">重点</span>' : ''}
+                    ${word.isStubborn ? '<span class="tag wrong">顽固</span>' : ''}
+                  </td>
+                  <td class="actions-cell">
+                    <div class="row">
+                      <button class="secondary" data-manual-pending="${word.id}">${word.isPendingWrong ? "移出" : "加入"}</button>
+                      <button class="ghost" data-manual-focus="${word.id}">${word.isFocus ? "取消重点" : "重点"}</button>
+                      <button class="ghost" data-manual-stubborn="${word.id}">${word.isStubborn ? "取消顽固" : "顽固"}</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+      document.querySelectorAll("[data-manual-count]").forEach(input => {
+        input.onchange = () => manualUpdateWrongPool(input.dataset.manualCount, { wrongCount: input.value });
+      });
+      document.querySelectorAll("[data-manual-pending]").forEach(button => {
+        button.onclick = () => {
+          const word = getWordById(lib, button.dataset.manualPending);
+          manualUpdateWrongPool(word.id, { isPendingWrong: !word.isPendingWrong });
+        };
+      });
+      document.querySelectorAll("[data-manual-focus]").forEach(button => {
+        button.onclick = () => {
+          const word = getWordById(lib, button.dataset.manualFocus);
+          manualUpdateWrongPool(word.id, { manualFocus: !word.isFocus });
+        };
+      });
+      document.querySelectorAll("[data-manual-stubborn]").forEach(button => {
+        button.onclick = () => {
+          const word = getWordById(lib, button.dataset.manualStubborn);
+          manualUpdateWrongPool(word.id, { manualStubborn: !word.isStubborn });
+        };
+      });
+    }
+
+    function renderHistoryEditTab() {
+      const lib = getCurrentLibrary();
+      const records = lib.dailyRecords.slice().sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber));
+      const selectedDay = editingRecordDay || records[0]?.dayNumber || "";
+      const record = records.find(item => Number(item.dayNumber) === Number(selectedDay));
+      document.getElementById("manualContent").innerHTML = `
+        <div class="stack">
+          <div class="notice small">如果只是某一天错词勾选错了，请在这里修正该 Day 的错词勾选。如果最开始词库顺序整体录错，建议先导出全部数据备份，再撤销相关 Day，调整未学习词顺序后重新补录。</div>
+          <div class="row">
+            <label>选择历史 Day
+              <select id="historyDaySelect">
+                ${records.map(item => '<option value="' + item.dayNumber + '">' + "Day " + item.dayNumber + " · " + item.date + '</option>').join("")}
+              </select>
+            </label>
+            <button class="danger" id="clearWrongHistoryBtn">清空错词记录并重算</button>
+          </div>
+          <div id="historyRecordArea">${record ? renderHistoryRecordArea(lib, record) : '<div class="empty">还没有历史记录。</div>'}</div>
+        </div>
+      `;
+      const select = document.getElementById("historyDaySelect");
+      if (select) {
+        select.value = selectedDay;
+        select.onchange = () => {
+          editingRecordDay = Number(select.value);
+          renderHistoryEditTab();
+        };
+      }
+      const saveButton = document.getElementById("saveHistoryRecordBtn");
+      if (saveButton) {
+        saveButton.onclick = () => {
+          record.wrongWordIds = Array.from(document.querySelectorAll("[data-history-wrong]:checked")).map(input => input.value);
+          const dateInput = document.getElementById("historyRecordDate");
+          if (dateInput) record.date = dateInput.value || record.date || todayDate();
+          recalculateLibraryState(lib);
+          alert("历史记录已更新，并已重新计算错词池、错误次数和统计。");
+          renderHistoryEditTab();
+        };
+      }
+      const clearButton = document.getElementById("clearWrongHistoryBtn");
+      if (clearButton) {
+        clearButton.onclick = () => {
+          const first = confirm("清空错词记录会把所有历史记录里的错词标记清空。确定继续吗？");
+          if (!first) return;
+          const second = confirm("请再次确认：wrongCount、当前错词池、重点/顽固状态都会重新计算。");
+          if (!second) return;
+          lib.dailyRecords.forEach(item => item.wrongWordIds = []);
+          recalculateLibraryState(lib);
+          renderHistoryEditTab();
+        };
+      }
+    }
+
+    function renderHistoryRecordArea(lib, record) {
+      const wrongSet = new Set(record.wrongWordIds || []);
+      return `
+        <div class="card" style="box-shadow:none">
+          <div class="row between">
+            <div>
+              <h3>Day ${record.dayNumber} · ${record.date}</h3>
+              <div class="small muted">这里只能修改当天日期和错词勾选，不会修改这一天听写了哪些词。</div>
+            </div>
+            <button id="saveHistoryRecordBtn">保存修改并重算</button>
+          </div>
+          <label style="max-width:220px; margin-top:12px">记录日期
+            <input id="historyRecordDate" type="date" value="${escapeHtml(record.date || todayDate())}">
+          </label>
+          <div class="table-wrap" style="margin-top:12px">
+            <table>
+              <thead><tr><th>写错</th><th>英文</th><th>中文释义</th><th>来源</th></tr></thead>
+              <tbody>
+                ${(record.taskWordIds || []).map(id => {
+                  const word = getWordById(lib, id);
+                  return `
+                    <tr>
+                      <td><input type="checkbox" data-history-wrong value="${id}" ${wrongSet.has(id) ? "checked" : ""}></td>
+                      <td class="word-cell">${escapeHtml(word?.word || id)}</td>
+                      <td>${escapeHtml(word?.meaning || "")}</td>
+                      <td>${sourceTagHtml(getRecordSources(record, id))}</td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function getRecordSources(record, id) {
+      if (record.sourceMap?.[id]) return record.sourceMap[id];
+      const sources = [];
+      if ((record.newWordIds || []).includes(id)) sources.push("new");
+      if ((record.pendingWrongWordIds || []).includes(id)) sources.push("wrong");
+      if ((record.delayedReviewWordIds || []).includes(id)) sources.push("review");
+      return sources.length ? sources : ["new"];
+    }
+
+    function renderStatistics() {
+      const lib = getCurrentLibrary();
+      const records = lib.dailyRecords.slice().sort((a, b) => {
+        const dateOrder = String(b.date || "").localeCompare(String(a.date || ""));
+        return dateOrder || Number(b.dayNumber || 0) - Number(a.dayNumber || 0);
+      });
+      const totalDictations = records.length;
+      const totalWords = records.reduce((sum, record) => sum + (record.taskWordIds || []).length, 0);
+      const totalWrong = records.reduce((sum, record) => sum + new Set(record.wrongWordIds || []).size, 0);
+      const totalNewWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).newWrong, 0);
+      const totalPendingWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).pendingWrong, 0);
+      const learned = lib.words.filter(word => word.firstLearnDay != null).length;
+      const pending = getPendingWrongWords(lib).length;
+      const accuracy = totalWords ? Math.round(((totalWords - totalWrong) / totalWords) * 100) : 0;
+      document.getElementById("app").innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <h2>统计</h2>
+            <div class="small muted">按实际记录日期查看听写情况。日期默认取电脑日期，也可以在这里手动修改。</div>
+          </section>
+          <section class="card span-12">
+            <div class="stats">
+              <div class="stat"><div class="small muted">完成次数</div><div class="num">${totalDictations}</div></div>
+              <div class="stat"><div class="small muted">累计听写词次</div><div class="num">${totalWords}</div></div>
+              <div class="stat"><div class="small muted">累计错误</div><div class="num">${totalWrong}</div></div>
+              <div class="stat"><div class="small muted">新词错误</div><div class="num">${totalNewWrong}</div></div>
+              <div class="stat"><div class="small muted">错词池错误</div><div class="num">${totalPendingWrong}</div></div>
+              <div class="stat"><div class="small muted">累计正确率</div><div class="num">${accuracy}%</div></div>
+              <div class="stat"><div class="small muted">已学新词</div><div class="num">${learned} / ${lib.words.length}</div></div>
+              <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pending}</div></div>
+            </div>
+          </section>
+          <section class="card span-12">
+            <div class="row between">
+              <h3>每日记录</h3>
+              <span class="small muted">修改日期后会立即保存，不影响 Day 顺序和错词计算。</span>
+            </div>
+            ${renderStatisticsTable(lib, records)}
+          </section>
+        </div>
+      `;
+      bindStatisticsEvents(lib);
+    }
+
+    function renderToolsView() {
+      const lib = getCurrentLibrary();
+      document.getElementById("app").innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <h2>工具</h2>
+            <div class="small muted">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池和备份数据。日常听写不需要使用。</div>
+          </section>
+
+          <section class="card span-12">
+            <h3>手动校准</h3>
+            <div class="notice small">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
+            <div class="tabs" style="margin-top:12px">
+              <button class="secondary" data-manual-tab="batch">连续按天补录</button>
+              <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
+              <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
+              <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
+              <button class="secondary" data-manual-tab="history">历史记录修改</button>
+            </div>
+            <div id="manualContent" style="margin-top:12px"></div>
+          </section>
+
+          <section class="card span-12">
+            <h3>数据备份</h3>
+            <div class="notice small">导入会覆盖数据，操作前建议先导出全部数据备份。</div>
+            <div class="row mobile-full" style="margin-top:12px">
+              <button id="statsDownloadLibraryBtn">导出当前词库</button>
+              <button class="danger" id="statsImportReplaceLibraryBtn">导入并覆盖当前词库</button>
+              <button class="secondary" id="statsImportNewLibraryBtn">导入为新词库</button>
+              <button id="statsDownloadAllBtn">导出全部数据</button>
+              <button class="danger" id="statsImportAllBtn">导入并覆盖全部数据</button>
+            </div>
+            <input id="statsLibraryImportFile" type="file" accept="application/json,.json" style="display:none">
+            <input id="statsAllImportFile" type="file" accept="application/json,.json" style="display:none">
+          </section>
+
+          <section class="card span-12">
+            <h3>危险操作</h3>
+            <div class="notice small">这些操作会改变学习记录。操作前建议先导出全部数据备份。</div>
+            <div class="row mobile-full" style="margin-top:12px">
+              <button class="danger" id="undoLatestRecordBtn">撤销最近一次完成记录</button>
+            </div>
+          </section>
+        </div>
+      `;
+      document.querySelectorAll("[data-manual-tab]").forEach(button => {
+        button.onclick = () => renderManualTab(button.dataset.manualTab);
+      });
+      renderManualTab("batch");
+      bindStatisticsBackupEvents(lib);
+    }
+
+    function countIntersection(idsA, idsB) {
+      const setB = new Set(idsB || []);
+      return Array.from(new Set(idsA || [])).filter(id => setB.has(id)).length;
+    }
+
+    function getRecordWrongStats(record) {
+      const wrongIds = record.wrongWordIds || [];
+      return {
+        newWrong: countIntersection(wrongIds, record.newWordIds || []),
+        pendingWrong: countIntersection(wrongIds, record.pendingWrongWordIds || [])
+      };
+    }
+
+    function renderStatisticsTable(lib, records) {
+      if (!records.length) return '<div class="empty">还没有听写记录。</div>';
+      return `
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>学习 Day</th>
+                <th>总词数</th>
+                <th>错误</th>
+                <th>新词错误</th>
+                <th>错词池错误</th>
+                <th>正确率</th>
+                <th>新词</th>
+                <th>错词复习</th>
+                <th>到期复查</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${records.map(record => {
+                const total = (record.taskWordIds || []).length;
+                const wrong = new Set(record.wrongWordIds || []).size;
+                const wrongStats = getRecordWrongStats(record);
+                const rate = total ? Math.round(((total - wrong) / total) * 100) : 0;
+                return `
+                  <tr>
+                    <td><input type="date" data-record-date="${record.recordId}" value="${escapeHtml(record.date || todayDate())}"></td>
+                    <td>Day ${record.dayNumber}</td>
+                    <td>${total}</td>
+                    <td>${wrong}</td>
+                    <td>${wrongStats.newWrong}</td>
+                    <td>${wrongStats.pendingWrong}</td>
+                    <td>${rate}%</td>
+                    <td>${(record.newWordIds || []).length}</td>
+                    <td>${(record.pendingWrongWordIds || []).length}</td>
+                    <td>${(record.delayedReviewWordIds || []).length}</td>
+                    <td><button class="secondary" data-export-record-wrong="${record.recordId}">导出错词</button></td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function bindStatisticsEvents(lib) {
+      document.querySelectorAll("[data-record-date]").forEach(input => {
+        input.onchange = () => {
+          const record = lib.dailyRecords.find(item => item.recordId === input.dataset.recordDate);
+          if (!record) return;
+          record.date = input.value || todayDate();
+          lib.updatedAt = todayDate();
+          saveData();
+        };
+      });
+      document.querySelectorAll("[data-export-record-wrong]").forEach(button => {
+        button.onclick = () => {
+          const record = lib.dailyRecords.find(item => item.recordId === button.dataset.exportRecordWrong);
+          exportWrongWordsCsv(lib, record, "该记录没有错词可导出。");
+        };
+      });
+    }
+
+    function readJsonFileInput(input, callback) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => callback(String(reader.result || ""));
+      reader.onerror = () => alert("文件读取失败，请重新选择。");
+      reader.readAsText(file, "utf-8");
+      input.value = "";
+    }
+
+    function bindStatisticsBackupEvents(lib) {
+      const libraryFile = document.getElementById("statsLibraryImportFile");
+      const allFile = document.getElementById("statsAllImportFile");
+      document.getElementById("statsDownloadLibraryBtn").onclick = () => downloadJson(exportLibrary(lib.libraryId), lib.libraryName + ".json");
+      document.getElementById("statsDownloadAllBtn").onclick = () => downloadJson(exportAllData(), "family-dictation-all-data.json");
+      document.getElementById("undoLatestRecordBtn").onclick = () => undoLatestDailyRecord();
+      document.getElementById("statsImportReplaceLibraryBtn").onclick = () => {
+        libraryFile.dataset.importMode = "replace";
+        libraryFile.click();
+      };
+      document.getElementById("statsImportNewLibraryBtn").onclick = () => {
+        libraryFile.dataset.importMode = "new";
+        libraryFile.click();
+      };
+      document.getElementById("statsImportAllBtn").onclick = () => allFile.click();
+      libraryFile.onchange = () => {
+        readJsonFileInput(libraryFile, text => importLibrary(text, libraryFile.dataset.importMode === "replace"));
+      };
+      allFile.onchange = () => {
+        readJsonFileInput(allFile, text => importAllData(text));
+      };
+    }
+
+    function downloadJson(content, filename) {
+      const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename.replace(/[\\/:*?"<>|]/g, "_");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvCell(value) {
+      const text = String(value ?? "");
+      return '"' + text.replaceAll('"', '""') + '"';
+    }
+
+    function rowsToCsv(rows) {
+      return rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+    }
+
+    function downloadCsv(rows, filename) {
+      const content = "\ufeff" + rowsToCsv(rows);
+      const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename.replace(/[\\/:*?"<>|]/g, "_");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function getSourceText(sourceMap, id) {
+      const sources = sourceMap?.[id] || [];
+      if (sources.length > 1) return "多重来源";
+      return SOURCE_LABELS[sources[0]] || "";
+    }
+
+    function getWordSourceLabelForRecord(record, wordId) {
+      const sources = [];
+      if ((record.newWordIds || []).includes(wordId)) sources.push("new");
+      if ((record.pendingWrongWordIds || []).includes(wordId)) sources.push("wrong");
+      if ((record.delayedReviewWordIds || []).includes(wordId)) sources.push("review");
+      if (!sources.length && record.sourceMap?.[wordId]) {
+        record.sourceMap[wordId].forEach(source => {
+          if (!sources.includes(source)) sources.push(source);
+        });
+      }
+      if (sources.length > 1) return "多重来源";
+      return SOURCE_LABELS[sources[0]] || "未知来源";
+    }
+
+    function getWrongWordsForRecord(lib, record) {
+      return Array.from(new Set(record?.wrongWordIds || [])).map(wordId => {
+        const word = getWordById(lib, wordId);
+        return {
+          wordId,
+          entryText: word?.word || wordId,
+          meaning: word?.meaning || "",
+          sourceLabel: getWordSourceLabelForRecord(record, wordId),
+          wrongCount: word?.wrongCount || 0,
+          dayNumber: record.dayNumber,
+          date: getRecordDate(record)
+        };
+      });
+    }
+
+    function exportWrongWordsCsv(lib, record, emptyMessage = "该记录没有错词可导出。") {
+      const details = getWrongWordsForRecord(lib, record);
+      if (!details.length) {
+        alert(emptyMessage);
+        return;
+      }
+      const rows = [["Day", "日期", "英文", "中文释义", "来源", "累计错误次数"]];
+      details.forEach(item => {
+        rows.push([item.dayNumber, item.date, item.entryText, item.meaning, item.sourceLabel, item.wrongCount]);
+      });
+      downloadCsv(rows, "dictation-wrong-words-Day" + record.dayNumber + "-" + getRecordDate(record) + ".csv");
+    }
+
+    function exportTaskToCsv(lib, task) {
+      if (!task || !task.taskWordIds?.length) {
+        alert("当前没有可导出的听写任务。");
+        return;
+      }
+      const rows = [["日期", "学习Day", "序号", "英文", "中文释义", "来源"]];
+      task.taskWordIds.forEach((id, index) => {
+        const word = getWordById(lib, id);
+        rows.push([
+          task.date || todayDate(),
+          task.dayNumber,
+          index + 1,
+          word?.word || id,
+          word?.meaning || "",
+          getSourceText(task.sourceMap, id)
+        ]);
+      });
+      downloadCsv(rows, lib.libraryName + "_Day" + task.dayNumber + "_" + (task.date || todayDate()) + "_听写清单.csv");
+    }
+
+    function exportWrongWordsToCsv(lib, words, label) {
+      if (!words.length) {
+        alert("当前筛选下没有可导出的错词。");
+        return;
+      }
+      const rows = [[
+        "序号", "英文", "中文释义", "累计错误次数", "最近错误Day", "最近错误日期",
+        "当前错词池", "重点错词", "顽固错词", "第一次学习Day", "延迟复查状态"
+      ]];
+      words.forEach(word => {
+        rows.push([
+          word.index + 1,
+          word.word,
+          word.meaning || "",
+          word.wrongCount || 0,
+          word.lastWrongDay || "",
+          word.lastWrongDate || "",
+          word.isPendingWrong ? "是" : "否",
+          word.isFocus ? "是" : "否",
+          word.isStubborn ? "是" : "否",
+          word.firstLearnDay || "",
+          word.delayedReviewCompleted ? "已完成" : word.delayedReviewDay ? "Day " + word.delayedReviewDay : "未安排"
+        ]);
+      });
+      downloadCsv(rows, lib.libraryName + "_" + label + "_错词.csv");
+    }
+
+    function renderSettings() {
+      const lib = getCurrentLibrary();
+      const s = lib.settings;
+      document.getElementById("app").innerHTML = `
+        <div class="grid">
+          <section class="card span-12">
+            <div class="row between">
+              <div>
+                <h2>设置</h2>
+                <div class="small muted">这些设置只影响当前词库。当天新词数只控制每天新释放的新词；当天到期复查数只控制每天从到期复查队列中取出的复查词；当前错词池不受这两个数字限制，会全部进入今日任务。</div>
+              </div>
+            </div>
+          </section>
+          <section class="card span-12">
+            <h3>学习计划</h3>
+            <div class="grid">
+              ${numberField("dailyTargetWords", "当天新词数", s.dailyTargetWords ?? 30, 0, 100, 5)}
+              ${numberField("dailyReviewWords", "当天到期复查数", s.dailyReviewWords ?? 30, 0, 100, 5)}
+              ${numberField("reviewDelayDays", "延迟复查天数", s.reviewDelayDays, 1, 365)}
+              <label class="span-4 checkbox-row" style="align-self:end">
+                <input data-setting="pauseNewWords" type="checkbox" ${s.pauseNewWords ? "checked" : ""}>
+                暂停新词
+              </label>
+            </div>
+          </section>
+          <section class="card span-12">
+            <h3>播放设置</h3>
+            <div class="grid">
+              <label class="span-4">播放顺序
+                <select data-setting="playOrder">
+                  <option value="ordered"${s.playOrder === "ordered" ? " selected" : ""}>按导入顺序</option>
+                  <option value="random"${s.playOrder === "random" ? " selected" : ""}>随机</option>
+                </select>
+              </label>
+              ${numberField("autoPlayIntervalSeconds", "自动播放间隔秒数", s.autoPlayIntervalSeconds, 1, 60)}
+              ${numberField("autoPlayRepeatTimes", "自动播放每词次数", s.autoPlayRepeatTimes || 1, 1, 10)}
+              <label class="span-4">朗读语速：<span id="settingsSpeechRateText">${Number(s.speechRate || 0.9).toFixed(1)}x</span>
+                <input data-setting="speechRate" id="settingsSpeechRate" type="range" min="0.5" max="1.5" step="0.1" value="${escapeHtml(s.speechRate || 0.9)}">
+              </label>
+              <label class="span-4">朗读声音
+                <select data-setting="speechVoiceName" data-speech-voice-select>
+                  ${getSpeechVoiceOptionsHtml(s.speechVoiceName || "")}
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="card span-12">
+            <h3>错词规则</h3>
+            <div class="grid">
+              ${numberField("correctTimesToExitWrongPool", "错词写对几次移出错词池", s.correctTimesToExitWrongPool, 1, 10)}
+            </div>
+            <div class="row mobile-full" style="margin-top:14px">
+              <button id="saveSettingsBtn">保存设置</button>
+              <button class="ghost" id="testSpeechBtn">测试朗读</button>
+            </div>
+          </section>
+        </div>
+      `;
+      document.getElementById("saveSettingsBtn").onclick = () => {
+        const updates = {};
+        document.querySelectorAll("[data-setting]").forEach(input => {
+          const key = input.dataset.setting;
+          if (input.type === "checkbox") updates[key] = input.checked;
+          else if (["playOrder", "speechVoiceName"].includes(key)) updates[key] = input.value;
+          else updates[key] = Number(input.value);
+        });
+        if ("dailyTargetWords" in updates) {
+          updates.dailyTargetWords = clampNumber(updates.dailyTargetWords, 0, 100, 30);
+        }
+        if ("dailyReviewWords" in updates) {
+          updates.dailyReviewWords = clampNumber(updates.dailyReviewWords, 0, 100, 30);
+        }
+        updates.countMode = "split-new-review";
+        updateLibrarySettings(updates);
+        alert("设置已保存。");
+      };
+      document.getElementById("testSpeechBtn").onclick = () => speakWord("achievement");
+      const settingsRate = document.getElementById("settingsSpeechRate");
+      const settingsRateText = document.getElementById("settingsSpeechRateText");
+      if (settingsRate && settingsRateText) {
+        settingsRate.oninput = () => settingsRateText.textContent = Number(settingsRate.value).toFixed(1) + "x";
+      }
+      hydrateSpeechVoiceSelects();
+    }
+
+    function numberField(key, labelText, value, min, max, step = 1) {
+      return `
+        <label class="span-4">${labelText}
+          <input data-setting="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${escapeHtml(value)}">
+        </label>
+      `;
+    }
+
+    window.addEventListener("beforeunload", () => saveData());
+    window.addEventListener("keydown", event => {
+      if (isTypingTarget(event.target)) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        playAdjacentFromKeyboard(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        playAdjacentFromKeyboard(1);
+      }
+    });
+    if ("speechSynthesis" in window) {
+      refreshSpeechVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        refreshSpeechVoices();
+        hydrateSpeechVoiceSelects();
+      };
+    }
+    loadData();
+    renderApp();
+  </script>
+</body>
+</html>
