@@ -399,13 +399,14 @@
 
   <main id="app"></main>
 
+  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
   <script>
     const STORAGE_KEY = "family_english_dictation_v1";
     const APP_VERSION = "1.0.0";
     const SOURCE_LABELS = {
       new: "新词",
       wrong: "错词复习",
-      review: "到期复查",
+      review: "到期错词复查",
       multi: "多重来源"
     };
     const RECOMMENDED_VOICE_PRESETS = [
@@ -524,10 +525,15 @@
         word: String(rawWord || "").trim(),
         meaning: String(meaning || "").trim(),
         index,
+        originalNo: index + 1,
         firstLearnDay: null,
         delayedReviewDay: null,
         delayedReviewCompleted: false,
         delayedReviewPostponed: false,
+        wrongReviewDueDay: null,
+        wrongReviewStage: 0,
+        wrongReviewCompletedCount: 0,
+        lastExitedWrongPoolDay: null,
         wrongCount: 0,
         lastWrongDay: null,
         lastWrongDate: null,
@@ -559,7 +565,10 @@
         createLibrary("我的词库", false);
       }
       data.version = data.version || APP_VERSION;
-      data.libraries.forEach(migrateLibrary);
+      data.libraries.forEach(lib => {
+        migrateLibrary(lib);
+        migrateWrongReviewRule(lib, { preserveDraft: true });
+      });
       if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
       saveData();
     }
@@ -596,10 +605,15 @@
         word.word = word.word || word.id;
         word.meaning = word.meaning || "";
         word.index = Number.isFinite(word.index) ? word.index : index;
+        if (word.originalNo == null) word.originalNo = getWordOriginalNo(word, index);
         word.firstLearnDay = word.firstLearnDay ?? null;
         word.delayedReviewDay = word.delayedReviewDay ?? null;
         word.delayedReviewCompleted = Boolean(word.delayedReviewCompleted);
         word.delayedReviewPostponed = Boolean(word.delayedReviewPostponed);
+        word.wrongReviewDueDay = word.wrongReviewDueDay ?? word.delayedReviewDay ?? null;
+        word.wrongReviewStage = Number(word.wrongReviewStage || 0);
+        word.wrongReviewCompletedCount = Number(word.wrongReviewCompletedCount || 0);
+        word.lastExitedWrongPoolDay = word.lastExitedWrongPoolDay ?? null;
         word.wrongCount = Number(word.wrongCount || 0);
         word.lastWrongDay = word.lastWrongDay ?? null;
         word.lastWrongDate = word.lastWrongDate ?? null;
@@ -610,6 +624,38 @@
         applyWrongFlags(word);
       });
       lib.words.sort((a, b) => a.index - b.index);
+      ensureOriginalNos(lib);
+    }
+
+    function migrateWrongReviewRule(lib, options = {}) {
+      const needsWrongReviewMigration = lib.reviewRuleVersion !== "wrong-only-review-v1";
+      if (needsWrongReviewMigration && lib.dailyRecords.length) {
+        recalculateLibraryState(lib, { preserveDraft: options.preserveDraft !== false, silent: true });
+      }
+      lib.reviewRuleVersion = "wrong-only-review-v1";
+    }
+
+    function ensureOriginalNos(lib) {
+      if (!lib || !Array.isArray(lib.words)) return;
+      lib.words.forEach((word, index) => {
+        if (word.originalNo == null) {
+          word.originalNo = getWordOriginalNo(word, index);
+        }
+      });
+    }
+
+    function getWordOriginalNo(word, fallbackIndex = 0) {
+      const value = Number(word?.originalNo ?? word?.originalIndex ?? word?.importIndex ?? word?.order);
+      return Number.isFinite(value) && value > 0 ? value : fallbackIndex + 1;
+    }
+
+    function getNextOriginalNo(lib) {
+      const max = Math.max(0, ...lib.words.map((word, index) => getWordOriginalNo(word, index)));
+      return max + 1;
+    }
+
+    function uniqueWordIds(ids) {
+      return Array.from(new Set((ids || []).filter(Boolean)));
     }
 
     function createLibrary(name, shouldRender = true) {
@@ -696,7 +742,11 @@
         if (!trimmed) return;
         let word = trimmed;
         let meaning = "";
-        if (trimmed.includes("|")) {
+        const firstChineseIndex = trimmed.search(/[\u3400-\u9fff]/);
+        if (firstChineseIndex >= 0) {
+          word = trimmed.slice(0, firstChineseIndex).trim().replace(/[|\t]+$/, "").trim();
+          meaning = trimmed.slice(firstChineseIndex).trim();
+        } else if (trimmed.includes("|")) {
           const parts = trimmed.split("|");
           word = parts.shift().trim();
           meaning = parts.join("|").trim();
@@ -704,12 +754,6 @@
           const parts = trimmed.split("\t");
           word = parts.shift().trim();
           meaning = parts.join("\t").trim();
-        } else {
-          const firstChineseIndex = trimmed.search(/[\u3400-\u9fff]/);
-          if (firstChineseIndex >= 0) {
-          word = trimmed.slice(0, firstChineseIndex).trim();
-          meaning = trimmed.slice(firstChineseIndex).trim();
-          }
         }
         if (word) result.push({ word, meaning });
       });
@@ -726,6 +770,7 @@
       }
       const existing = new Set(lib.words.map(word => getWordDuplicateKey(word.word, word.meaning)));
       const usedIds = new Set(lib.words.map(word => word.id));
+      let nextOriginalNo = getNextOriginalNo(lib);
       let added = 0;
       let skipped = 0;
       parsed.forEach(item => {
@@ -737,6 +782,8 @@
         }
         const word = makeWord(item.word, item.meaning, lib.words.length);
         word.id = generateWordId(item.word, item.meaning, usedIds);
+        word.originalNo = nextOriginalNo;
+        nextOriginalNo += 1;
         lib.words.push(word);
         existing.add(duplicateKey);
         usedIds.add(word.id);
@@ -799,28 +846,39 @@
     function getDueDelayedReviewWords(dayNumber, lib = getCurrentLibrary()) {
       return lib.words
         .filter(word => {
+          const dueDay = word.wrongReviewDueDay ?? word.delayedReviewDay;
           return word.firstLearnDay != null
-            && word.delayedReviewDay != null
+            && Number(word.wrongCount || 0) > 0
+            && !word.isPendingWrong
+            && dueDay != null
             && !word.delayedReviewCompleted
-            && Number(word.delayedReviewDay) <= Number(dayNumber);
+            && Number(dueDay) <= Number(dayNumber);
         })
         .sort((a, b) => {
-          if (a.delayedReviewDay !== b.delayedReviewDay) return a.delayedReviewDay - b.delayedReviewDay;
+          const ad = a.wrongReviewDueDay ?? a.delayedReviewDay;
+          const bd = b.wrongReviewDueDay ?? b.delayedReviewDay;
+          if (ad !== bd) return ad - bd;
           return a.index - b.index;
         });
     }
 
     function applyDailyLimit(pendingWrongWords, dueReviewWords, unlearnedWords, plannedNewCount, settings) {
-      const selectedWrongIds = pendingWrongWords.map(word => word.id);
+      const selectedWrongIds = uniqueWordIds(pendingWrongWords.map(word => word.id));
       const selectedIdSet = new Set(selectedWrongIds);
       const selectedReviewIds = [];
       const postponedReviewIds = [];
       const reviewLimit = clampNumber(settings.dailyReviewWords, 0, 100, 30);
+      let selectedStandaloneReviewCount = 0;
 
       dueReviewWords.forEach(word => {
-        if (selectedReviewIds.length < reviewLimit) {
+        if (selectedIdSet.has(word.id)) {
+          if (!selectedReviewIds.includes(word.id)) selectedReviewIds.push(word.id);
+          return;
+        }
+        if (selectedStandaloneReviewCount < reviewLimit) {
           selectedReviewIds.push(word.id);
           selectedIdSet.add(word.id);
+          selectedStandaloneReviewCount += 1;
         } else {
           postponedReviewIds.push(word.id);
         }
@@ -837,8 +895,8 @@
 
       return {
         pendingWrongWordIds: selectedWrongIds,
-        delayedReviewWordIds: selectedReviewIds,
-        postponedReviewWordIds: postponedReviewIds,
+        delayedReviewWordIds: uniqueWordIds(selectedReviewIds),
+        postponedReviewWordIds: uniqueWordIds(postponedReviewIds),
         newWordIds,
         plannedNewCount,
         actualNewCount: newWordIds.length,
@@ -1090,12 +1148,12 @@
         recordId: uid("rec"),
         dayNumber: Number(task.dayNumber),
         date: task.date || todayDate(),
-        taskWordIds: task.taskWordIds.slice(),
-        newWordIds: task.newWordIds.slice(),
-        pendingWrongWordIds: task.pendingWrongWordIds.slice(),
-        delayedReviewWordIds: task.delayedReviewWordIds.slice(),
-        postponedReviewWordIds: task.postponedReviewWordIds.slice(),
-        wrongWordIds: Array.from(new Set(wrongWordIds)),
+        taskWordIds: uniqueWordIds(task.taskWordIds),
+        newWordIds: uniqueWordIds(task.newWordIds),
+        pendingWrongWordIds: uniqueWordIds(task.pendingWrongWordIds),
+        delayedReviewWordIds: uniqueWordIds(task.delayedReviewWordIds),
+        postponedReviewWordIds: uniqueWordIds(task.postponedReviewWordIds),
+        wrongWordIds: uniqueWordIds(wrongWordIds),
         completedAt: nowIso(),
         source,
         sourceMap: clone(task.sourceMap || {}),
@@ -1109,6 +1167,25 @@
       if (record?.completedAt) return String(record.completedAt).slice(0, 10);
       if (record?.createdAt) return String(record.createdAt).slice(0, 10);
       return todayDate();
+    }
+
+    function clearWrongReview(word, completedCount = Number(word.wrongReviewCompletedCount || 0)) {
+      word.wrongReviewDueDay = null;
+      word.delayedReviewDay = null;
+      word.delayedReviewPostponed = false;
+      word.delayedReviewCompleted = true;
+      word.wrongReviewStage = 0;
+      word.wrongReviewCompletedCount = completedCount;
+    }
+
+    function scheduleWrongReview(word, fromDay, lib, completedCount = 0) {
+      const dueDay = Number(fromDay) + Number(lib.settings.reviewDelayDays || 15);
+      word.wrongReviewDueDay = dueDay;
+      word.delayedReviewDay = dueDay;
+      word.delayedReviewCompleted = false;
+      word.delayedReviewPostponed = false;
+      word.wrongReviewCompletedCount = completedCount;
+      word.wrongReviewStage = completedCount + 1;
     }
 
     function updateWordStatsFromRecord(lib, record) {
@@ -1126,14 +1203,7 @@
         if (!word) return;
         if (word.firstLearnDay == null) {
           word.firstLearnDay = Number(record.dayNumber);
-          if (record.skipDelayedReviewSchedule) {
-            word.delayedReviewDay = null;
-            word.delayedReviewCompleted = true;
-          } else {
-            word.delayedReviewDay = Number(record.dayNumber) + Number(lib.settings.reviewDelayDays || 15);
-            word.delayedReviewCompleted = false;
-          }
-          word.delayedReviewPostponed = false;
+          clearWrongReview(word, 0);
         }
       });
 
@@ -1152,6 +1222,7 @@
           word.lastWrongDate = recordDate;
           word.isPendingWrong = true;
           word.correctStreakInWrongPool = 0;
+          clearWrongReview(word, 0);
           if (pendingBefore.has(id)) continuedWrong.push(id);
           else newWrong.push(id);
         } else if (pendingBefore.has(id)) {
@@ -1159,12 +1230,17 @@
           if (word.correctStreakInWrongPool >= Number(lib.settings.correctTimesToExitWrongPool || 1)) {
             word.isPendingWrong = false;
             word.correctStreakInWrongPool = 0;
+            word.lastExitedWrongPoolDay = Number(record.dayNumber);
+            scheduleWrongReview(word, record.dayNumber, lib, 0);
             movedOut.push(id);
           }
-        }
-        if (delayedSet.has(id)) {
-          word.delayedReviewCompleted = true;
-          word.delayedReviewPostponed = false;
+        } else if (delayedSet.has(id)) {
+          const completedCount = Number(word.wrongReviewCompletedCount || 0) + 1;
+          if (Number(word.wrongCount || 0) >= 2 && completedCount < 2) {
+            scheduleWrongReview(word, record.dayNumber, lib, completedCount);
+          } else {
+            clearWrongReview(word, completedCount);
+          }
         }
         applyWrongFlags(word);
       });
@@ -1202,17 +1278,20 @@
         : Boolean(word.manualStubborn);
     }
 
-    function recalculateLibraryState(lib = getCurrentLibrary()) {
+    function recalculateLibraryState(lib = getCurrentLibrary(), options = {}) {
       if (!lib) return;
+      const draftTask = options.preserveDraft ? lib.currentDraftTask : null;
       lib.words.forEach((word, index) => {
         const manualFocus = word.manualFocus ?? null;
         const manualStubborn = word.manualStubborn ?? null;
         const wordText = word.word;
         const meaning = word.meaning;
         const id = word.id;
+        const originalNo = word.originalNo;
         const originalIndex = Number.isFinite(word.index) ? word.index : index;
         Object.assign(word, makeWord(wordText, meaning, originalIndex));
         word.id = id;
+        word.originalNo = originalNo ?? originalIndex + 1;
         word.manualFocus = manualFocus;
         word.manualStubborn = manualStubborn;
         applyWrongFlags(word);
@@ -1221,9 +1300,9 @@
         .slice()
         .sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber))
         .forEach(record => updateWordStatsFromRecord(lib, record));
-      lib.currentDraftTask = null;
+      lib.currentDraftTask = options.preserveDraft ? draftTask : null;
       lib.updatedAt = todayDate();
-      saveData();
+      if (!options.silent) saveData();
     }
 
     function removeWordIdFromTaskLike(task, wordId) {
@@ -1488,6 +1567,7 @@
       const ok = confirm(replaceCurrent ? "导入会覆盖当前词库，确定继续吗？" : "确定导入这个词库吗？");
       if (!ok) return;
       migrateLibrary(imported);
+      migrateWrongReviewRule(imported, { preserveDraft: true });
       if (replaceCurrent) {
         const currentId = data.activeLibraryId;
         imported.libraryId = currentId;
@@ -1523,7 +1603,10 @@
       const second = confirm("请再次确认：当前所有词库、进度和错词记录都会被替换。");
       if (!second) return;
       data = imported;
-      data.libraries.forEach(migrateLibrary);
+      data.libraries.forEach(lib => {
+        migrateLibrary(lib);
+        migrateWrongReviewRule(lib, { preserveDraft: true });
+      });
       if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
       saveData();
       renderApp();
@@ -1625,8 +1708,8 @@
           <section class="card span-12">
             <h3>导入单词</h3>
             <div class="stack">
-              <div class="notice small">推荐使用英文和中文之间加竖线 |，尤其是词组。这样可以避免 English phrase 被空格错误拆分。只有英文也可以导入，中文释义会留空。</div>
-              <textarea id="wordImportText" placeholder="achievement | 成就&#10;travel writer | 旅行作家&#10;research assistant | 研究员&#10;storage 储存"></textarea>
+              <div class="notice small">每行一个：英文 中文释义。系统会从第一个中文字符开始切分，中文前面的内容会完整作为英文或英文词组。只有英文也可以导入，中文释义会留空。</div>
+              <textarea id="wordImportText" placeholder="achievement 成就&#10;travel writer 旅行作家&#10;research assistant 研究员&#10;storage 储存"></textarea>
               <div class="row mobile-full">
                 <button id="appendWordsBtn">追加到词库</button>
                 <button class="danger" id="replaceWordsBtn">清空并重建词库</button>
@@ -1859,7 +1942,7 @@
         if (exportSummaryWrongButton) {
           exportSummaryWrongButton.onclick = () => {
             const record = lib.dailyRecords.find(item => item.recordId === todaySummary.recordId);
-            exportWrongWordsCsv(lib, record, "本次没有错词可导出。");
+            exportWrongWordsXlsx(lib, record, "本次没有错词可导出。");
           };
         }
         return;
@@ -1884,7 +1967,7 @@
             <div class="stats">
               <div class="stat"><div class="small muted">当前学习 Day</div><div class="num">${dayNumber}</div></div>
               <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
-              <div class="stat"><div class="small muted">到期延迟复查</div><div class="num">${dueCount}</div></div>
+              <div class="stat"><div class="small muted">到期错词复查</div><div class="num">${dueCount}</div></div>
               <div class="stat"><div class="small muted">已学 / 总数</div><div class="num">${learned} / ${lib.words.length}</div></div>
             </div>
           </section>
@@ -1900,7 +1983,7 @@
       if (startButton) startButton.onclick = () => startDictation();
       bindTaskDateInput(lib, task);
       const exportTodayButton = document.getElementById("exportTodayTaskBtn");
-      if (exportTodayButton && task) exportTodayButton.onclick = () => exportTaskToCsv(lib, task);
+      if (exportTodayButton) exportTodayButton.onclick = () => exportDictationPaperXlsx(lib, task);
       bindPlayerEvents(lib, task);
       bindSubmitEvents();
     }
@@ -1927,42 +2010,66 @@
       if (!lib.words.length) {
         return '<section class="card span-12"><div class="empty">当前词库还没有单词。请先到词库导入。</div></section>';
       }
-      const planned = getPlannedNewWordCount(getNextDayNumber(lib), lib);
+      const dayNumber = getNextDayNumber(lib);
+      const planned = getPlannedNewWordCount(dayNumber, lib);
       const reviewCount = clampNumber(lib.settings.dailyReviewWords, 0, 100, 30);
+      const dueCount = getDueDelayedReviewWords(dayNumber, lib).length;
       return `
         <section class="card span-12">
           <div class="stack">
             <div class="notice small">点击开始后会生成今日任务。任务生成后会保留在浏览器中，只有提交错词结果才算完成这一天。</div>
-            <div>当天新词数：<span class="strong">${planned}</span> 个；当天到期复查数：<span class="strong">${reviewCount}</span> 个。当前错词池会全部进入今日任务。</div>
-            ${lib.settings.pauseNewWords ? '<div class="notice">当前已暂停新词，今日只安排错词和到期复查。</div>' : ''}
+            <div>当天新词数：<span class="strong">${planned}</span> 个。</div>
+            <div>当前错词池会全部进入今日任务。</div>
+            ${dueCount > 0 ? '<div>当前有 <span class="strong">' + dueCount + '</span> 个到期错词复查，本次最多取 <span class="strong">' + reviewCount + '</span> 个。</div>' : ''}
+            ${lib.settings.pauseNewWords ? '<div class="notice">当前已暂停新词，今日只安排错词和到期错词复查。</div>' : ''}
             <button id="startDictationBtn">生成/开始今日听写</button>
           </div>
         </section>
       `;
     }
 
+    function getTaskCategoryCounts(task) {
+      const taskSet = new Set(uniqueWordIds(task?.taskWordIds || []));
+      const wrongSet = new Set(uniqueWordIds(task?.pendingWrongWordIds || []).filter(id => taskSet.has(id)));
+      const reviewSet = new Set(uniqueWordIds(task?.delayedReviewWordIds || []).filter(id => taskSet.has(id) && !wrongSet.has(id)));
+      const newSet = new Set(uniqueWordIds(task?.newWordIds || []).filter(id => taskSet.has(id) && !wrongSet.has(id) && !reviewSet.has(id)));
+      return {
+        total: taskSet.size,
+        wrong: wrongSet.size,
+        review: reviewSet.size,
+        new: newSet.size
+      };
+    }
+
+    function renderTaskCountSummary(counts) {
+      const parts = ["新词 " + counts.new, "错词复习 " + counts.wrong];
+      if (counts.review > 0) parts.push("到期错词复查 " + counts.review);
+      return "今日 " + counts.total + " 个：" + parts.join(" + ");
+    }
+
     function renderTaskPanel(lib, task, mode) {
-      const dueActual = task.delayedReviewWordIds.length;
+      const categoryCounts = getTaskCategoryCounts(task);
+      const dueActual = categoryCounts.review;
       const notices = [];
-      if (lib.settings.pauseNewWords) notices.push("当前已暂停新词，今日只安排错词和到期复查。");
+      if (lib.settings.pauseNewWords) notices.push("当前已暂停新词，今日只安排错词和到期错词复查。");
       if (task.postponedReviewWordIds.length) {
-        notices.push("有 " + task.postponedReviewWordIds.length + " 个到期复查词超过当天到期复查数，已顺延到后续。");
+        notices.push("有 " + task.postponedReviewWordIds.length + " 个到期错词复查超过当天到期复查数，已顺延到后续。");
       }
 
       return `
         <section class="card span-12">
-          <div class="notice small" style="margin-bottom:12px">今日 ${task.taskWordIds.length} 个：新词 ${task.newWordIds.length} + 错词复习 ${task.pendingWrongWordIds.length} + 到期复查 ${dueActual}</div>
+          <div class="notice small" style="margin-bottom:12px">${renderTaskCountSummary(categoryCounts)}</div>
           <div class="stats">
-            <div class="stat"><div class="small muted">今日总词数</div><div class="num">${task.taskWordIds.length}</div></div>
-            <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${task.pendingWrongWordIds.length}</div></div>
-            <div class="stat"><div class="small muted">今日到期复查</div><div class="num">${dueActual}</div></div>
-            <div class="stat"><div class="small muted">今日新词</div><div class="num">${task.newWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">今日总词数</div><div class="num">${categoryCounts.total}</div></div>
+            <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${categoryCounts.wrong}</div></div>
+            <div class="stat"><div class="small muted">今日到期错词复查</div><div class="num">${categoryCounts.review}</div></div>
+            <div class="stat"><div class="small muted">今日新词</div><div class="num">${categoryCounts.new}</div></div>
           </div>
           <div class="row" style="margin-top:12px">
             <label style="max-width:220px">本次记录日期
               <input id="taskDateInput" type="date" value="${escapeHtml(task.date || todayDate())}">
             </label>
-            <button class="secondary" id="exportTodayTaskBtn">导出今日清单</button>
+            <button class="secondary" id="exportTodayTaskBtn">导出听写纸</button>
             <span class="small muted">默认使用电脑日期，也可以手动改成实际听写日期。</span>
           </div>
           ${notices.map(text => '<div class="notice small" style="margin-top:10px">' + escapeHtml(text) + '</div>').join("")}
@@ -2036,8 +2143,12 @@
               <h3>统一标记错误</h3>
               <div class="small muted">只勾选写错的单词。未勾选默认本次写对。</div>
             </div>
-            <button id="submitResultBtn">提交今日结果</button>
+            <div class="row">
+              <span class="small muted" id="submitWrongCountHint">将提交 0 个错词，本次按全对记录。</span>
+              <button id="submitResultBtn">提交今日结果</button>
+            </div>
           </div>
+          <div id="selectedWrongSummary" class="notice small" style="margin-top:12px">当前未勾选错词。提交后本次将按全对记录。</div>
           <div class="table-wrap page-scroll-table" style="margin-top:12px">
             <table>
               <thead>
@@ -2155,6 +2266,30 @@
         const ok = confirm("确定提交今日结果吗？提交后会计入一个学习 Day。");
         if (ok) submitTodayResult();
       };
+      const wrongChecks = document.querySelectorAll("[data-wrong-check]");
+      if (wrongChecks.length) {
+        const update = () => renderSelectedWrongSummary(getCurrentLibrary());
+        wrongChecks.forEach(input => input.addEventListener("change", update));
+        update();
+      }
+    }
+
+    function renderSelectedWrongSummary(lib) {
+      const selected = Array.from(document.querySelectorAll("[data-wrong-check]:checked")).map(input => input.value);
+      const summary = document.getElementById("selectedWrongSummary");
+      const hint = document.getElementById("submitWrongCountHint");
+      if (!summary && !hint) return;
+      if (!selected.length) {
+        if (summary) summary.textContent = "当前未勾选错词。提交后本次将按全对记录。";
+        if (hint) hint.textContent = "将提交 0 个错词，本次按全对记录。";
+        return;
+      }
+      const details = selected.map(id => {
+        const word = getWordById(lib, id);
+        return getWordOriginalNo(word, word?.index || 0) + " " + (word?.word || id);
+      });
+      if (summary) summary.textContent = "已勾选 " + selected.length + " 个错词：" + details.join("、");
+      if (hint) hint.textContent = "将提交 " + selected.length + " 个错词。";
     }
 
     function startAutoPlay() {
@@ -2257,7 +2392,7 @@
               <div><span class="strong">本日改对并移出错词池：</span>${wordList(summary.movedOut)}</div>
               <div><span class="strong">下一次预计学习 Day：</span>${getNextDayNumber(lib)}</div>
               ${renderLatestResultWrongWords(lib, summary)}
-              <button class="secondary" id="exportSummaryWrongBtn">导出本次错词 CSV</button>
+              <button class="secondary" id="exportSummaryWrongBtn">导出今日错词</button>
               <button id="newTaskAfterSummary">返回今日听写</button>
             </div>
           </section>
@@ -2307,7 +2442,7 @@
       if (filter === "focus") words = words.filter(word => word.isFocus);
       if (filter === "stubborn") words = words.filter(word => word.isStubborn);
       words.sort((a, b) => {
-        if (sort === "recent") return String(b.lastWrongDate || "").localeCompare(String(a.lastWrongDate || ""));
+        if (sort === "word") return String(a.word || "").localeCompare(String(b.word || ""));
         if (sort === "index") return a.index - b.index;
         if (sort === "first") return (a.firstLearnDay || 999999) - (b.firstLearnDay || 999999);
         return (b.wrongCount || 0) - (a.wrongCount || 0);
@@ -2334,9 +2469,9 @@
                 <label>排序
                   <select id="wrongSort">
                     <option value="count">按错误次数从高到低</option>
-                    <option value="recent">按最近错误日期从近到远</option>
-                    <option value="index">按导入顺序</option>
                     <option value="first">按第一次学习 Day</option>
+                    <option value="word">按英文</option>
+                    <option value="index">按导入顺序</option>
                   </select>
                 </label>
                 <button class="secondary" id="exportWrongWordsBtn">导出当前筛选错词</button>
@@ -2369,10 +2504,9 @@
                 <th>英文</th>
                 <th>中文释义</th>
                 <th>错误次数</th>
-                <th>最近错误</th>
                 <th>状态</th>
                 <th>首次学习</th>
-                <th>延迟复查</th>
+                <th>错词复查</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -2382,7 +2516,6 @@
                   <td class="word-cell">${escapeHtml(word.word)}</td>
                   <td>${escapeHtml(word.meaning || "")}</td>
                   <td><input style="width:80px" type="number" min="0" data-wrong-count="${word.id}" value="${word.wrongCount}"></td>
-                  <td>Day ${word.lastWrongDay || "-"}<br><span class="small muted">${word.lastWrongDate || "-"}</span></td>
                   <td>
                     ${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : '<span class="tag">历史错词</span>'}
                     ${word.isFocus ? '<span class="tag review">重点</span>' : ''}
@@ -2406,10 +2539,11 @@
 
     function renderReviewStatus(word) {
       if (word.firstLearnDay == null) return "-";
-      if (word.delayedReviewCompleted) return '<span class="tag ok">已完成</span>';
-      if (word.delayedReviewDay == null) return '<span class="tag">未安排</span>';
+      if (word.isPendingWrong) return '<span class="tag wrong">错词池中</span>';
+      const dueDay = word.wrongReviewDueDay ?? word.delayedReviewDay;
+      if (dueDay == null) return word.delayedReviewCompleted ? '<span class="tag ok">已完成</span>' : '<span class="tag">未安排</span>';
       if (word.delayedReviewPostponed) return '<span class="tag review">已顺延到期</span>';
-      return '<span class="tag review">Day ' + word.delayedReviewDay + '</span>';
+      return '<span class="tag review">Day ' + dueDay + '</span>';
     }
 
     function bindWrongActions() {
@@ -2478,8 +2612,10 @@
         const id = word.id;
         const manualFocus = word.manualFocus ?? null;
         const manualStubborn = word.manualStubborn ?? null;
+        const originalNo = word.originalNo;
         Object.assign(word, makeWord(word.word, word.meaning, Number.isFinite(word.index) ? word.index : index));
         word.id = id;
+        word.originalNo = originalNo ?? (Number.isFinite(word.index) ? word.index + 1 : index + 1);
         word.manualFocus = manualFocus;
         word.manualStubborn = manualStubborn;
         applyWrongFlags(word);
@@ -2525,7 +2661,7 @@
         notices.push("当天复习词较多，原计划新词 " + task.plannedNewCount + " 个，实际安排 " + task.actualNewCount + " 个。");
       }
       if (task.postponedReviewWordIds.length) {
-        notices.push("有 " + task.postponedReviewWordIds.length + " 个延迟复查词顺延到后续。");
+        notices.push("有 " + task.postponedReviewWordIds.length + " 个错词复查词顺延到后续。");
       }
       if (task.wrongOverflow) {
         notices.push("当天错词池会全部保留。");
@@ -2547,7 +2683,7 @@
             <div class="stat"><div class="small muted">当天总词数</div><div class="num">${task.taskWordIds.length}</div></div>
             <div class="stat"><div class="small muted">已勾选错词</div><div class="num" id="batchWrongCountText">0</div></div>
             <div class="stat"><div class="small muted">错词池带入</div><div class="num">${task.pendingWrongWordIds.length}</div></div>
-            <div class="stat"><div class="small muted">延迟复查</div><div class="num">${task.delayedReviewWordIds.length}</div></div>
+            <div class="stat"><div class="small muted">错词复查</div><div class="num">${task.delayedReviewWordIds.length}</div></div>
             <div class="stat"><div class="small muted">当天新词</div><div class="num">${task.newWordIds.length}</div></div>
           </div>
           ${notices.map(text => '<div class="notice small">' + escapeHtml(text) + '</div>').join("")}
@@ -2696,7 +2832,7 @@
           <div class="row between">
             <div>
               <h3>补录 Day ${task.dayNumber} 完整任务</h3>
-              <div class="small muted">已自动带入当时应该在错词池里的词，并加入到期复查词。</div>
+              <div class="small muted">已自动带入当时应该在错词池里的词，并加入到期错词复查词。</div>
               <div class="small strong">已勾选错词：<span id="strictWrongCountText">0</span> 个</div>
             </div>
             <button id="submitStrictRecordBtn">提交补录记录</button>
@@ -2742,7 +2878,7 @@
           </label>
           <label class="checkbox-row">
             <input id="quickScheduleReviews" type="checkbox" checked>
-            为这些已学词安排延迟复查
+            为这些已学错词安排错词复查
           </label>
           <label>已知错词，可粘贴英文或“英文 中文释义”
             <textarea id="quickWrongText" placeholder="achievement&#10;storage"></textarea>
@@ -2914,7 +3050,7 @@
         return dateOrder || Number(b.dayNumber || 0) - Number(a.dayNumber || 0);
       });
       const totalDictations = records.length;
-      const totalWords = records.reduce((sum, record) => sum + (record.taskWordIds || []).length, 0);
+      const totalWords = records.reduce((sum, record) => sum + getTaskCategoryCounts(record).total, 0);
       const totalWrong = records.reduce((sum, record) => sum + new Set(record.wrongWordIds || []).size, 0);
       const totalNewWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).newWrong, 0);
       const totalPendingWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).pendingWrong, 0);
@@ -3032,13 +3168,14 @@
                 <th>正确率</th>
                 <th>新词</th>
                 <th>错词复习</th>
-                <th>到期复查</th>
+                <th>到期错词复查</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               ${records.map(record => {
-                const total = (record.taskWordIds || []).length;
+                const counts = getTaskCategoryCounts(record);
+                const total = counts.total;
                 const wrong = new Set(record.wrongWordIds || []).size;
                 const wrongStats = getRecordWrongStats(record);
                 const rate = total ? Math.round(((total - wrong) / total) * 100) : 0;
@@ -3051,9 +3188,9 @@
                     <td>${wrongStats.newWrong}</td>
                     <td>${wrongStats.pendingWrong}</td>
                     <td>${rate}%</td>
-                    <td>${(record.newWordIds || []).length}</td>
-                    <td>${(record.pendingWrongWordIds || []).length}</td>
-                    <td>${(record.delayedReviewWordIds || []).length}</td>
+                    <td>${counts.new}</td>
+                    <td>${counts.wrong}</td>
+                    <td>${counts.review}</td>
                     <td><button class="secondary" data-export-record-wrong="${record.recordId}">导出错词</button></td>
                   </tr>
                 `;
@@ -3077,7 +3214,7 @@
       document.querySelectorAll("[data-export-record-wrong]").forEach(button => {
         button.onclick = () => {
           const record = lib.dailyRecords.find(item => item.recordId === button.dataset.exportRecordWrong);
-          exportWrongWordsCsv(lib, record, "该记录没有错词可导出。");
+          exportWrongWordsXlsx(lib, record, "该记录没有错词可导出。");
         };
       });
     }
@@ -3155,11 +3292,69 @@
       return SOURCE_LABELS[sources[0]] || "";
     }
 
+    function requireExcelJs() {
+      if (!window.ExcelJS) {
+        alert("Excel 导出组件未加载，请检查网络或本地依赖。");
+        return null;
+      }
+      return window.ExcelJS;
+    }
+
+    function excelThinBorder() {
+      return {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" }
+      };
+    }
+
+    function safeSheetName(name) {
+      const text = String(name || "Sheet1").replace(/[\\/?*:[\]]/g, "-").slice(0, 31);
+      return text || "Sheet1";
+    }
+
+    async function downloadWorkbook(workbook, filename) {
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename.replace(/[\\/:*?"<>|]/g, "_");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function getWordSourcesForTask(task, wordId) {
+      const sources = [];
+      if ((task?.newWordIds || []).includes(wordId)) sources.push("new");
+      if ((task?.pendingWrongWordIds || []).includes(wordId)) sources.push("wrong");
+      if ((task?.delayedReviewWordIds || []).includes(wordId)) sources.push("review");
+      if ((task?.wrongReviewWordIds || []).includes(wordId)) sources.push("review");
+      if (!sources.length && task?.sourceMap?.[wordId]) {
+        task.sourceMap[wordId].forEach(source => {
+          if (!sources.includes(source)) sources.push(source);
+        });
+      }
+      return sources;
+    }
+
+    function getWordSourceLabelForTask(task, wordId) {
+      const sources = getWordSourcesForTask(task, wordId);
+      if (sources.length > 1) return "多重来源";
+      return SOURCE_LABELS[sources[0]] || "未知来源";
+    }
+
     function getWordSourceLabelForRecord(record, wordId) {
       const sources = [];
       if ((record.newWordIds || []).includes(wordId)) sources.push("new");
       if ((record.pendingWrongWordIds || []).includes(wordId)) sources.push("wrong");
       if ((record.delayedReviewWordIds || []).includes(wordId)) sources.push("review");
+      if ((record.wrongReviewWordIds || []).includes(wordId)) sources.push("review");
       if (!sources.length && record.sourceMap?.[wordId]) {
         record.sourceMap[wordId].forEach(source => {
           if (!sources.includes(source)) sources.push(source);
@@ -3174,6 +3369,7 @@
         const word = getWordById(lib, wordId);
         return {
           wordId,
+          originalNo: getWordOriginalNo(word, word?.index || 0),
           entryText: word?.word || wordId,
           meaning: word?.meaning || "",
           sourceLabel: getWordSourceLabelForRecord(record, wordId),
@@ -3184,37 +3380,199 @@
       });
     }
 
-    function exportWrongWordsCsv(lib, record, emptyMessage = "该记录没有错词可导出。") {
+    async function exportWrongWordsXlsx(lib, record, emptyMessage = "该记录没有错词可导出。") {
+      ensureOriginalNos(lib);
       const details = getWrongWordsForRecord(lib, record);
       if (!details.length) {
         alert(emptyMessage);
         return;
       }
-      const rows = [["Day", "日期", "英文", "中文释义", "来源", "累计错误次数"]];
-      details.forEach(item => {
-        rows.push([item.dayNumber, item.date, item.entryText, item.meaning, item.sourceLabel, item.wrongCount]);
+      const ExcelJS = requireExcelJs();
+      if (!ExcelJS) return;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "家庭英语单词听写";
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet(safeSheetName("今日错词"));
+      sheet.columns = [
+        { width: 11.4 },
+        { width: 23.6 },
+        { width: 27.2 },
+        { width: 13.5 },
+        { width: 11.5 }
+      ];
+      sheet.pageSetup = {
+        orientation: "portrait",
+        margins: { left: 0.75, right: 0.75, top: 1, bottom: 1, header: 0.5, footer: 0.5 }
+      };
+      sheet.getRow(1).height = 26;
+      ["原序号", "中文释义", "英文", "来源", "错次"].forEach((value, index) => {
+        sheet.getCell(1, index + 1).value = value;
       });
-      downloadCsv(rows, "dictation-wrong-words-Day" + record.dayNumber + "-" + getRecordDate(record) + ".csv");
+      details.forEach((item, index) => {
+        const row = sheet.getRow(index + 2);
+        row.height = 30;
+        [item.originalNo, item.meaning, item.entryText, item.sourceLabel, item.wrongCount].forEach((value, colIndex) => {
+          sheet.getCell(index + 2, colIndex + 1).value = value;
+        });
+      });
+      for (let rowIndex = 1; rowIndex <= details.length + 1; rowIndex += 1) {
+        const row = sheet.getRow(rowIndex);
+        row.eachCell({ includeEmpty: true }, cell => {
+          cell.font = { name: "SimSun", size: 16, bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+          cell.border = excelThinBorder();
+        });
+        for (let col = 1; col <= 5; col += 1) {
+          const cell = sheet.getCell(rowIndex, col);
+          cell.font = { name: "SimSun", size: 16, bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+          cell.border = excelThinBorder();
+        }
+      }
+      await downloadWorkbook(workbook, "今日错词-Day" + record.dayNumber + "-" + getRecordDate(record) + ".xlsx");
+    }
+
+    function exportWrongWordsCsv(lib, record, emptyMessage = "该记录没有错词可导出。") {
+      exportWrongWordsXlsx(lib, record, emptyMessage);
+    }
+
+    function getDictationDataRowHeight(rowsPerColumn) {
+      if (rowsPerColumn >= 30) return 28;
+      if (rowsPerColumn >= 27) return 31;
+      if (rowsPerColumn >= 24) return 34;
+      if (rowsPerColumn >= 21) return 38;
+      if (rowsPerColumn >= 18) return 43;
+      if (rowsPerColumn >= 15) return 50;
+      return 56;
+    }
+
+    function getDictationFontSize(rowsPerColumn) {
+      if (rowsPerColumn >= 30) return 11;
+      if (rowsPerColumn >= 25) return 12;
+      if (rowsPerColumn >= 21) return 13;
+      return 14;
+    }
+
+    function getDictationLineFontSize(rowsPerColumn) {
+      if (rowsPerColumn >= 30) return 7;
+      if (rowsPerColumn >= 25) return 8;
+      return 9;
+    }
+
+    function setupDictationPaperSheet(sheet, title, rowsPerColumn) {
+      const widths = [5.2, 13, 26, 17.5, 5.2, 13, 26, 17.5];
+      const dataRowHeight = getDictationDataRowHeight(rowsPerColumn);
+      const finalRow = 4 + rowsPerColumn;
+      sheet.columns = widths.map(width => ({ width }));
+      sheet.pageSetup = {
+        paperSize: 9,
+        orientation: "portrait",
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 1,
+        horizontalCentered: true,
+        verticalCentered: false,
+        printArea: "A1:H" + finalRow,
+        margins: {
+          left: 0.35,
+          right: 0.35,
+          top: 0.35,
+          bottom: 0.24,
+          header: 0.2,
+          footer: 0.2
+        }
+      };
+      sheet.mergeCells("A1:H1");
+      sheet.getCell("A1").value = title;
+      sheet.getCell("A1").font = { name: "SimSun", size: 20, bold: true };
+      sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+      sheet.getRow(1).height = 25;
+      sheet.getRow(2).height = 10;
+      sheet.getRow(3).height = 6;
+      sheet.getRow(4).height = rowsPerColumn >= 30 ? 34 : 38;
+
+      const headers = ["原序号", "中文", "英文", "订错", "原序号", "中文", "英文", "订错"];
+      headers.forEach((value, index) => {
+        sheet.getCell(4, index + 1).value = value;
+      });
+      for (let col = 1; col <= 8; col += 1) {
+        const cell = sheet.getCell(4, col);
+        cell.font = { name: "SimSun", size: col === 1 || col === 5 ? 10 : 11, bold: true };
+        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        cell.border = excelThinBorder();
+      }
+      for (let rowIndex = 5; rowIndex <= finalRow; rowIndex += 1) {
+        sheet.getRow(rowIndex).height = dataRowHeight;
+        for (let col = 1; col <= 8; col += 1) {
+          const cell = sheet.getCell(rowIndex, col);
+          cell.border = excelThinBorder();
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        }
+      }
+    }
+
+    function getDictationLineText(kind) {
+      const englishLine = "—  —  —  —  —  —  —  —\n—  —  —  —  —  —  —  —";
+      const correctionLine = "—  —  —  —  —  —\n—  —  —  —  —  —";
+      return kind === "correction" ? correctionLine : englishLine;
+    }
+
+    function fillDictationPaperWord(sheet, rowIndex, startCol, word, rowsPerColumn) {
+      const fontSize = getDictationFontSize(rowsPerColumn);
+      const lineFontSize = getDictationLineFontSize(rowsPerColumn);
+      const noCell = sheet.getCell(rowIndex, startCol);
+      const meaningCell = sheet.getCell(rowIndex, startCol + 1);
+      const englishLineCell = sheet.getCell(rowIndex, startCol + 2);
+      const correctionLineCell = sheet.getCell(rowIndex, startCol + 3);
+      noCell.value = getWordOriginalNo(word, word?.index || 0);
+      meaningCell.value = word?.meaning || "";
+      englishLineCell.value = getDictationLineText("english");
+      correctionLineCell.value = getDictationLineText("correction");
+
+      noCell.font = { name: "SimSun", size: fontSize };
+      meaningCell.font = { name: "SimSun", size: fontSize, bold: true };
+      [englishLineCell, correctionLineCell].forEach(cell => {
+        cell.font = { name: "SimSun", size: lineFontSize, color: { argb: "FFD9D9D9" } };
+      });
+      [noCell, meaningCell, englishLineCell, correctionLineCell].forEach(cell => {
+        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        cell.border = excelThinBorder();
+      });
+    }
+
+    async function exportDictationPaperXlsx(lib, task) {
+      if (!task || !task.taskWordIds?.length) {
+        alert("请先生成今日听写任务，再导出听写纸。");
+        return;
+      }
+      const ExcelJS = requireExcelJs();
+      if (!ExcelJS) return;
+      ensureOriginalNos(lib);
+      const exportDate = document.getElementById("taskDateInput")?.value || task.date || todayDate();
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "家庭英语单词听写";
+      workbook.created = new Date();
+      const ids = uniqueWordIds(task.taskWordIds);
+      if (ids.length > 60) {
+        alert("听写纸最多支持一页 60 个词，请先减少今日听写数量后再导出。");
+        return;
+      }
+      const rowsPerColumn = Math.ceil(ids.length / 2);
+      const title = "错词练习（FCE 听力词汇）";
+      const sheet = workbook.addWorksheet(safeSheetName("听写纸"));
+      setupDictationPaperSheet(sheet, title, rowsPerColumn);
+      ids.forEach((id, index) => {
+        const word = getWordById(lib, id);
+        const isRightColumn = index >= rowsPerColumn;
+        const rowIndex = 5 + (isRightColumn ? index - rowsPerColumn : index);
+        const startCol = isRightColumn ? 5 : 1;
+        fillDictationPaperWord(sheet, rowIndex, startCol, word, rowsPerColumn);
+      });
+      await downloadWorkbook(workbook, "听写纸-Day" + task.dayNumber + "-" + exportDate + ".xlsx");
     }
 
     function exportTaskToCsv(lib, task) {
-      if (!task || !task.taskWordIds?.length) {
-        alert("当前没有可导出的听写任务。");
-        return;
-      }
-      const rows = [["日期", "学习Day", "序号", "英文", "中文释义", "来源"]];
-      task.taskWordIds.forEach((id, index) => {
-        const word = getWordById(lib, id);
-        rows.push([
-          task.date || todayDate(),
-          task.dayNumber,
-          index + 1,
-          word?.word || id,
-          word?.meaning || "",
-          getSourceText(task.sourceMap, id)
-        ]);
-      });
-      downloadCsv(rows, lib.libraryName + "_Day" + task.dayNumber + "_" + (task.date || todayDate()) + "_听写清单.csv");
+      exportDictationPaperXlsx(lib, task);
     }
 
     function exportWrongWordsToCsv(lib, words, label) {
@@ -3223,22 +3581,15 @@
         return;
       }
       const rows = [[
-        "序号", "英文", "中文释义", "累计错误次数", "最近错误Day", "最近错误日期",
-        "当前错词池", "重点错词", "顽固错词", "第一次学习Day", "延迟复查状态"
+        "原序号", "中文释义", "英文", "来源", "累计错误次数"
       ]];
-      words.forEach(word => {
+      words.forEach((word, index) => {
         rows.push([
-          word.index + 1,
-          word.word,
+          getWordOriginalNo(word, index),
           word.meaning || "",
-          word.wrongCount || 0,
-          word.lastWrongDay || "",
-          word.lastWrongDate || "",
-          word.isPendingWrong ? "是" : "否",
-          word.isFocus ? "是" : "否",
-          word.isStubborn ? "是" : "否",
-          word.firstLearnDay || "",
-          word.delayedReviewCompleted ? "已完成" : word.delayedReviewDay ? "Day " + word.delayedReviewDay : "未安排"
+          word.word,
+          word.isPendingWrong ? "错词复习" : "历史错词",
+          word.wrongCount || 0
         ]);
       });
       downloadCsv(rows, lib.libraryName + "_" + label + "_错词.csv");
@@ -3253,7 +3604,7 @@
             <div class="row between">
               <div>
                 <h2>设置</h2>
-                <div class="small muted">这些设置只影响当前词库。当天新词数只控制每天新释放的新词；当天到期复查数只控制每天从到期复查队列中取出的复查词；当前错词池不受这两个数字限制，会全部进入今日任务。</div>
+                <div class="small muted">这些设置只影响当前词库。当天新词数只控制每天新释放的新词；当天到期复查数只控制每天从到期错词复查队列中取出的词。一次就写对的词不会进入 15 天复查；只有曾经错过并写对退出错题池的词，才会在设定天数后复查。</div>
               </div>
             </div>
           </section>
