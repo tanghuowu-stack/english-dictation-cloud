@@ -400,6 +400,7 @@
   <main id="app"></main>
 
   <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+  <script type="module" src="./src/cloudSyncUi.js"></script>
   <script>
     const STORAGE_KEY = "family_english_dictation_v1";
     const APP_VERSION = "1.0.0";
@@ -3096,6 +3097,23 @@
             <div class="small muted">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池和备份数据。日常听写不需要使用。</div>
           </section>
 
+          <section class="card span-12" id="cloudSyncPanel">
+            <h3>云端同步</h3>
+            <div class="small muted">云端功能目前只用于登录和显示状态，不会自动上传、下载或覆盖本地数据。</div>
+            <div class="stats" style="margin-top:12px">
+              <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
+              <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
+            </div>
+            <div class="row mobile-full" id="cloudLoginControls" style="margin-top:12px">
+              <label style="flex:1 1 280px">邮箱
+                <input id="cloudEmailInput" type="email" autocomplete="email" placeholder="请输入接收登录链接的邮箱">
+              </label>
+              <button id="cloudLoginBtn" type="button">登录</button>
+              <button class="secondary" id="cloudLogoutBtn" type="button" hidden>退出登录</button>
+            </div>
+            <div class="small muted" id="cloudSyncMessage" style="margin-top:10px" aria-live="polite"></div>
+          </section>
+
           <section class="card span-12">
             <h3>手动校准</h3>
             <div class="notice small">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
@@ -3137,6 +3155,9 @@
       });
       renderManualTab("batch");
       bindStatisticsBackupEvents(lib);
+      if (window.cloudSync && typeof window.cloudSync.mount === "function") {
+        window.cloudSync.mount();
+      }
     }
 
     function countIntersection(idsA, idsB) {
