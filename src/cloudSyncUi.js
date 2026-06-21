@@ -9,6 +9,7 @@ function getCloudElements() {
     mode: document.getElementById("cloudModeText"),
     user: document.getElementById("cloudUserText"),
     email: document.getElementById("cloudEmailInput"),
+    password: document.getElementById("cloudPasswordInput"),
     login: document.getElementById("cloudLoginBtn"),
     logout: document.getElementById("cloudLogoutBtn"),
     message: document.getElementById("cloudSyncMessage")
@@ -28,6 +29,7 @@ async function refreshCloudStatus(elements) {
     elements.mode.textContent = "本地模式";
     elements.user.textContent = "未登录";
     elements.email.disabled = true;
+    elements.password.disabled = true;
     elements.login.disabled = true;
     elements.login.hidden = false;
     elements.logout.hidden = true;
@@ -40,7 +42,9 @@ async function refreshCloudStatus(elements) {
     elements.mode.textContent = user ? "已登录云端" : "云端已配置";
     elements.user.textContent = user?.email || "未登录";
     elements.email.disabled = Boolean(user);
+    elements.password.disabled = Boolean(user);
     elements.login.hidden = Boolean(user);
+    elements.login.disabled = false;
     elements.logout.hidden = !user;
     if (user) setMessage(elements.message, "当前仅显示登录状态，尚未启用自动同步。", false);
     else setMessage(elements.message, "未登录时仍可继续使用全部本地功能。", false);
@@ -51,26 +55,30 @@ async function refreshCloudStatus(elements) {
   }
 }
 
-async function sendMagicLink(elements) {
+async function signInWithEmailPassword(elements) {
   const email = String(elements.email.value || "").trim();
+  const password = String(elements.password.value || "");
   if (!email) {
     setMessage(elements.message, "请输入邮箱。", true);
     elements.email.focus();
     return;
   }
+  if (!password) {
+    setMessage(elements.message, "请输入密码。", true);
+    elements.password.focus();
+    return;
+  }
 
   elements.login.disabled = true;
-  setMessage(elements.message, "正在发送登录链接...", false);
+  setMessage(elements.message, "正在登录...", false);
   try {
-    const redirectTo = window.location.origin + window.location.pathname;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo }
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    setMessage(elements.message, "登录链接已发送，请到邮箱中打开。", false);
+    elements.password.value = "";
+    await refreshCloudStatus(elements);
+    setMessage(elements.message, "登录成功。当前仅显示登录状态，尚未启用自动同步。", false);
   } catch (error) {
-    setMessage(elements.message, error.message || "登录链接发送失败", true);
+    setMessage(elements.message, "登录失败：" + (error.message || "网络错误"), true);
   } finally {
     elements.login.disabled = false;
   }
@@ -93,14 +101,16 @@ async function signOut(elements) {
 async function mount() {
   const elements = getCloudElements();
   if (!elements.panel) return;
-  elements.login.onclick = () => sendMagicLink(elements);
+  elements.login.onclick = () => signInWithEmailPassword(elements);
   elements.logout.onclick = () => signOut(elements);
-  elements.email.onkeydown = event => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      sendMagicLink(elements);
-    }
-  };
+  [elements.email, elements.password].forEach(input => {
+    input.onkeydown = event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        signInWithEmailPassword(elements);
+      }
+    };
+  });
   await refreshCloudStatus(elements);
 }
 
