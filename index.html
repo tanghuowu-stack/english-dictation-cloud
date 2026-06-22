@@ -1220,6 +1220,12 @@
       stopAutoPlay();
       saveData();
       renderTodayView("summary");
+      if (window.cloudSync && typeof window.cloudSync.autoUploadAfterDictation === "function") {
+        window.cloudSync.autoUploadAfterDictation();
+      } else {
+        const status = document.getElementById("autoCloudUploadStatus");
+        if (status) status.textContent = "本次听写已保存到本机。当前未登录云端，未自动上传。";
+      }
     }
 
     function undoLatestDailyRecord() {
@@ -2467,6 +2473,7 @@
           <section class="card span-12">
             <h2>今日总结 · Day ${summary.dayNumber}</h2>
             <div class="success">已保存今日听写结果。</div>
+            <div class="notice small" id="autoCloudUploadStatus" style="margin-top:10px" aria-live="polite">本次听写已保存到本机，正在检查云端登录状态...</div>
           </section>
           <section class="card span-12">
             <div class="stats">
@@ -3193,7 +3200,7 @@
 
           <section class="card span-12" id="cloudSyncPanel">
             <h3>云端同步</h3>
-            <div class="small muted">云端数据只会在你手动点击上传时写入，不会自动同步、下载或覆盖本地数据。</div>
+            <div class="small muted">听写完成后会自动上传最新本地数据；云端下载和本机覆盖仍只允许手动操作。</div>
             <div class="stats" style="margin-top:12px">
               <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
               <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
