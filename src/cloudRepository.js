@@ -91,8 +91,14 @@ function uniqueIds(ids) {
 }
 
 function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function positiveDayOrNull(value) {
+  const number = numberOrNull(value);
+  return number != null && number > 0 ? number : null;
 }
 
 function validTimestamp(value, fallback = null) {
@@ -185,6 +191,54 @@ export async function uploadLocalDataToCloud(localData) {
 
     let cloudLibrary;
     try {
+      const { data: existingLibraries, error: existingLibraryError } = await client
+        .from("libraries")
+        .select("id")
+        .eq("owner_id", user.id)
+        .eq("source_local_id", localLibraryId)
+        .limit(1);
+      if (existingLibraryError) throw existingLibraryError;
+      const existingCloudLibrary = existingLibraries?.[0];
+      if (existingCloudLibrary) {
+        const localRecords = Array.isArray(library.dailyRecords) ? library.dailyRecords : [];
+        const localMaxDay = localRecords.length
+          ? Math.max(...localRecords.map(record => Number(record.dayNumber || 0)))
+          : 0;
+        const { data: latestCloudSessions, error: latestSessionError } = await client
+          .from("dictation_sessions")
+          .select("day_number")
+          .eq("user_id", user.id)
+          .eq("library_id", existingCloudLibrary.id)
+          .order("day_number", { ascending: false })
+          .limit(1);
+        if (latestSessionError) throw latestSessionError;
+        const cloudMaxDay = Number(latestCloudSessions?.[0]?.day_number || 0);
+        const cloudSessionCount = await getExactCount(
+          client
+            .from("dictation_sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("library_id", existingCloudLibrary.id)
+        );
+        if (cloudMaxDay > localMaxDay || cloudSessionCount > localRecords.length) {
+          addFailure(
+            result,
+            1,
+            "词库“" + (library.libraryName || localLibraryId) + "”",
+            new Error(
+              "本机记录较旧（本机最大 Day " + localMaxDay + "，云端最大 Day " + cloudMaxDay +
+              "），已阻止旧数据覆盖云端"
+            )
+          );
+          continue;
+        }
+      }
+    } catch (error) {
+      addFailure(result, 1, "上传前进度检查", error);
+      continue;
+    }
+
+    try {
       const { data, error } = await client
         .from("libraries")
         .upsert({
@@ -269,7 +323,7 @@ export async function uploadLocalDataToCloud(localData) {
         user_id: user.id,
         library_id: cloudLibrary.id,
         source_local_id: recordSourceLocalId(record),
-        day_number: numberOrNull(record.dayNumber) ?? 0,
+        day_number: positiveDayOrNull(record.dayNumber) ?? 0,
         record_date: record.date || null,
         task_word_ids: mapped.taskWordIds,
         new_word_ids: mapped.newWordIds,
@@ -299,13 +353,13 @@ export async function uploadLocalDataToCloud(localData) {
         user_id: user.id,
         library_id: cloudLibrary.id,
         word_id: cloudWordId,
-        first_learn_day: numberOrNull(word.firstLearnDay),
+        first_learn_day: positiveDayOrNull(word.firstLearnDay),
         wrong_count: numberOrNull(word.wrongCount) ?? 0,
         is_pending_wrong: Boolean(word.isPendingWrong),
         correct_streak: numberOrNull(word.correctStreakInWrongPool) ?? 0,
-        wrong_review_due_day: numberOrNull(word.wrongReviewDueDay ?? word.delayedReviewDay),
+        wrong_review_due_day: positiveDayOrNull(word.wrongReviewDueDay ?? word.delayedReviewDay),
         wrong_review_stage: numberOrNull(word.wrongReviewStage) ?? 0,
-        last_exited_wrong_pool_day: numberOrNull(word.lastExitedWrongPoolDay),
+        last_exited_wrong_pool_day: positiveDayOrNull(word.lastExitedWrongPoolDay),
         updated_at: new Date().toISOString()
       }];
     });
@@ -444,15 +498,15 @@ function restoredSettings(settingsRow) {
 
 function restoreProgressOnWord(word, progress) {
   if (!progress) return;
-  word.firstLearnDay = progress.first_learn_day ?? null;
+  word.firstLearnDay = positiveDayOrNull(progress.first_learn_day);
   word.wrongCount = Number(progress.wrong_count || 0);
   word.isPendingWrong = Boolean(progress.is_pending_wrong);
   word.correctStreakInWrongPool = Number(progress.correct_streak || 0);
-  word.wrongReviewDueDay = progress.wrong_review_due_day ?? null;
-  word.delayedReviewDay = progress.wrong_review_due_day ?? null;
+  word.wrongReviewDueDay = positiveDayOrNull(progress.wrong_review_due_day);
+  word.delayedReviewDay = positiveDayOrNull(progress.wrong_review_due_day);
   word.wrongReviewStage = Number(progress.wrong_review_stage || 0);
   word.wrongReviewCompletedCount = Math.max(0, word.wrongReviewStage - 1);
-  word.lastExitedWrongPoolDay = progress.last_exited_wrong_pool_day ?? null;
+  word.lastExitedWrongPoolDay = positiveDayOrNull(progress.last_exited_wrong_pool_day);
   word.delayedReviewCompleted = word.wrongReviewDueDay == null && !word.isPendingWrong && word.wrongCount > 0;
   word.isFocus = word.wrongCount >= 2;
   word.isStubborn = word.wrongCount >= 3;
@@ -515,8 +569,28 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
     libraries: cloudLibraries.length,
     words: cloudWords.length,
     sessions: cloudSessions.length,
-    progress: cloudProgress.length
+    maxDayNumber: cloudSessions.length
+      ? Math.max(...cloudSessions.map(session => Number(session.day_number || 0)))
+      : 0,
+    progress: cloudProgress.length,
+    firstLearnDayNonNullProgress: cloudProgress.filter(progress => progress.first_learn_day != null).length,
+    firstLearnDayValidProgress: cloudProgress.filter(progress => positiveDayOrNull(progress.first_learn_day) != null).length,
+    pendingWrongProgress: cloudProgress.filter(progress => progress.is_pending_wrong === true).length,
+    userId: user.id
   };
+  const knownCloudWordIds = new Set(cloudWords.map(word => word.id));
+  const derivedLearnedCloudWordIds = new Set();
+  cloudProgress.forEach(progress => {
+    if (positiveDayOrNull(progress.first_learn_day) != null && knownCloudWordIds.has(progress.word_id)) {
+      derivedLearnedCloudWordIds.add(progress.word_id);
+    }
+  });
+  cloudSessions.forEach(session => {
+    uniqueIds(session.task_word_ids).forEach(wordId => {
+      if (knownCloudWordIds.has(wordId)) derivedLearnedCloudWordIds.add(wordId);
+    });
+  });
+  result.cloudCounts.derivedLearned = derivedLearnedCloudWordIds.size;
 
   const usedLibraryIds = new Set();
   const cloudLibraryToLocalId = new Map();
@@ -648,6 +722,14 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
       .sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber));
     const wordById = new Map(words.map(word => [word.id, word]));
     dailyRecords.forEach(record => {
+      record.taskWordIds.forEach(wordId => {
+        const word = wordById.get(wordId);
+        if (!word) return;
+        const dayNumber = positiveDayOrNull(record.dayNumber);
+        if (dayNumber != null && (word.firstLearnDay == null || dayNumber < Number(word.firstLearnDay))) {
+          word.firstLearnDay = dayNumber;
+        }
+      });
       record.wrongWordIds.forEach(wordId => {
         const word = wordById.get(wordId);
         if (!word) return;
