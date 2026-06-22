@@ -580,6 +580,11 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
+    window.getLocalDictationDataForCloudUpload = function() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    };
+
     function migrateLibrary(lib) {
       lib.libraryId = lib.libraryId || uid("lib");
       lib.libraryName = lib.libraryName || "未命名词库";
@@ -3099,7 +3104,7 @@
 
           <section class="card span-12" id="cloudSyncPanel">
             <h3>云端同步</h3>
-            <div class="small muted">云端功能目前只用于登录和显示状态，不会自动上传、下载或覆盖本地数据。</div>
+            <div class="small muted">云端数据只会在你手动点击上传时写入，不会自动同步、下载或覆盖本地数据。</div>
             <div class="stats" style="margin-top:12px">
               <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
               <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
@@ -3115,6 +3120,17 @@
               <button class="secondary" id="cloudLogoutBtn" type="button" hidden>退出登录</button>
             </div>
             <div class="small muted" id="cloudSyncMessage" style="margin-top:10px" aria-live="polite"></div>
+            <div class="row mobile-full" style="margin-top:12px">
+              <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
+              <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
+            </div>
+            <div class="stats" id="cloudDataSummary" style="margin-top:12px" hidden>
+              <div class="stat"><div class="small muted">云端词库</div><div class="num" id="cloudLibraryCount">0</div></div>
+              <div class="stat"><div class="small muted">云端单词</div><div class="num" id="cloudWordCount">0</div></div>
+              <div class="stat"><div class="small muted">云端听写记录</div><div class="num" id="cloudSessionCount">0</div></div>
+              <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
+            </div>
+            <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
           </section>
 
           <section class="card span-12">
