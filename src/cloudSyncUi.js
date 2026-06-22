@@ -7,6 +7,8 @@ import {
 } from "./cloudRepository.js";
 
 let authListenerBound = false;
+let lastAutoUploadMessage = "";
+let lastAutoUploadIsError = false;
 
 function getCloudElements() {
   return {
@@ -38,6 +40,15 @@ function setMessage(element, text, isError = false) {
   element.textContent = text || "";
   element.classList.toggle("danger-text", isError);
   element.classList.toggle("ok-text", Boolean(text) && !isError);
+}
+
+function setAutoUploadStatus(text, isError = false, isSuccess = false) {
+  lastAutoUploadMessage = text;
+  lastAutoUploadIsError = isError;
+  const element = document.getElementById("autoCloudUploadStatus");
+  if (!element) return;
+  element.textContent = text;
+  element.className = isSuccess ? "success small" : "notice small" + (isError ? " danger-text" : "");
 }
 
 async function refreshCloudStatus(elements) {
@@ -77,7 +88,7 @@ async function refreshCloudStatus(elements) {
       elements.summaryPanel.hidden = true;
       elements.reload.hidden = true;
     }
-    if (user) setMessage(elements.message, "当前仅显示登录状态，尚未启用自动同步。", false);
+    if (user) setMessage(elements.message, "已登录云端；听写完成后会自动上传，下载和覆盖仍需手动操作。", false);
     else setMessage(elements.message, "未登录时仍可继续使用全部本地功能。", false);
   } catch (error) {
     elements.mode.textContent = "云端已配置";
@@ -109,6 +120,60 @@ function getLocalDataSnapshot() {
     throw new Error("无法读取本地听写数据");
   }
   return window.getLocalDictationDataForCloudUpload();
+}
+
+function validateLocalDataForAutoUpload(localData) {
+  const reasons = [];
+  const libraries = Array.isArray(localData?.libraries) ? localData.libraries : [];
+  const activeLibrary = libraries.find(library => library.libraryId === localData?.activeLibraryId);
+  if (!localData?.activeLibraryId || !activeLibrary) {
+    reasons.push("缺少有效的 activeLibraryId");
+    return { valid: false, reasons };
+  }
+  const summary = summarizeLibrary(activeLibrary);
+  if (summary.total <= 0) reasons.push("当前词库没有单词");
+  if (summary.currentDay <= 20 && summary.total === 595 && summary.learned === 595) {
+    reasons.push("检测到低 Day 下 595 个词全部已学的异常状态");
+  }
+  return { valid: reasons.length === 0, reasons, summary };
+}
+
+async function autoUploadAfterDictation() {
+  setAutoUploadStatus("本次听写已保存到本机，正在自动上传云端...", false, false);
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      setAutoUploadStatus("本次听写已保存到本机。当前未登录云端，未自动上传。", false, false);
+      return;
+    }
+    const localData = getLocalDataSnapshot();
+    const validation = validateLocalDataForAutoUpload(localData);
+    if (!validation.valid) {
+      setAutoUploadStatus("本地数据结构异常，已阻止自动上传云端，请先检查数据。", true, false);
+      return;
+    }
+    const result = await uploadLocalDataToCloud(localData);
+    if (result.blockedOlderData) {
+      setAutoUploadStatus("本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。", true, false);
+      return;
+    }
+    if (result.failed > 0) {
+      const reason = result.failureReasons.join("；") || "未知错误";
+      setAutoUploadStatus(
+        "本次听写已保存到本机，但自动上传云端失败：" + reason + "。请稍后在工具页手动上传。",
+        true,
+        false
+      );
+      return;
+    }
+    setAutoUploadStatus("本次听写已保存到本机，并已自动上传到云端。", false, true);
+  } catch (error) {
+    setAutoUploadStatus(
+      "本次听写已保存到本机，但自动上传云端失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
+      true,
+      false
+    );
+  }
 }
 
 function summarizeLibrary(library) {
@@ -370,6 +435,9 @@ async function mount() {
   elements.diagnose.onclick = () => diagnoseLocalAndCloudData(elements);
   elements.download.onclick = () => downloadCloudData(elements);
   elements.reload.onclick = () => window.location.reload();
+  if (lastAutoUploadMessage && !elements.actionMessage.textContent) {
+    setMessage(elements.actionMessage, "最近一次自动上传：" + lastAutoUploadMessage, lastAutoUploadIsError);
+  }
   [elements.email, elements.password].forEach(input => {
     input.onkeydown = event => {
       if (event.key === "Enter") {
@@ -381,7 +449,7 @@ async function mount() {
   await refreshCloudStatus(elements);
 }
 
-window.cloudSync = { mount };
+window.cloudSync = { mount, autoUploadAfterDictation };
 
 if (supabase && !authListenerBound) {
   authListenerBound = true;

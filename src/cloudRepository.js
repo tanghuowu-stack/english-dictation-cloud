@@ -173,6 +173,7 @@ export async function uploadLocalDataToCloud(localData) {
     sessions: 0,
     progress: 0,
     failed: 0,
+    blockedOlderData: false,
     failureReasons: []
   };
 
@@ -204,23 +205,37 @@ export async function uploadLocalDataToCloud(localData) {
         const localMaxDay = localRecords.length
           ? Math.max(...localRecords.map(record => Number(record.dayNumber || 0)))
           : 0;
-        const { data: latestCloudSessions, error: latestSessionError } = await client
-          .from("dictation_sessions")
-          .select("day_number")
-          .eq("user_id", user.id)
-          .eq("library_id", existingCloudLibrary.id)
-          .order("day_number", { ascending: false })
-          .limit(1);
-        if (latestSessionError) throw latestSessionError;
-        const cloudMaxDay = Number(latestCloudSessions?.[0]?.day_number || 0);
-        const cloudSessionCount = await getExactCount(
-          client
-            .from("dictation_sessions")
-            .select("id", { count: "exact", head: true })
+        const existingCloudSessions = await fetchAllCloudRows(
+          client,
+          "dictation_sessions",
+          "id,source_local_id,day_number",
+          query => query
             .eq("user_id", user.id)
             .eq("library_id", existingCloudLibrary.id)
         );
+        const cloudMaxDay = existingCloudSessions.length
+          ? Math.max(...existingCloudSessions.map(session => Number(session.day_number || 0)))
+          : 0;
+        const localRecordByDay = new Map(
+          localRecords.map(record => [Number(record.dayNumber || 0), recordSourceLocalId(record)])
+        );
+        const conflictingDay = existingCloudSessions.find(session => {
+          const localSourceId = localRecordByDay.get(Number(session.day_number || 0));
+          return localSourceId && session.source_local_id && localSourceId !== String(session.source_local_id);
+        });
+        const cloudSessionCount = existingCloudSessions.length;
+        if (conflictingDay) {
+          result.blockedOlderData = true;
+          addFailure(
+            result,
+            1,
+            "词库“" + (library.libraryName || localLibraryId) + "”",
+            new Error("Day " + conflictingDay.day_number + " 的本机记录与云端记录来源不一致，已阻止覆盖")
+          );
+          continue;
+        }
         if (cloudMaxDay > localMaxDay || cloudSessionCount > localRecords.length) {
+          result.blockedOlderData = true;
           addFailure(
             result,
             1,
