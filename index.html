@@ -777,6 +777,9 @@
       data.libraries.push(lib);
       data.activeLibraryId = lib.libraryId;
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("library-created");
+      }
       if (shouldRender) renderApp();
       return lib;
     }
@@ -804,6 +807,9 @@
       if (!data.libraries.length) createLibrary("我的词库", false);
       data.activeLibraryId = data.libraries[0].libraryId;
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("library-deleted");
+      }
       renderApp();
     }
 
@@ -813,6 +819,9 @@
       lib.settings = Object.assign({}, lib.settings, partial);
       lib.updatedAt = todayDate();
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("settings-changed");
+      }
       renderApp();
     }
 
@@ -893,6 +902,9 @@
       });
       lib.updatedAt = todayDate();
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("words-imported");
+      }
       return { added, skipped };
     }
 
@@ -918,6 +930,9 @@
       if (repaired) {
         lib.updatedAt = todayDate();
         saveData();
+        if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+          window.cloudSync.requestAutoUploadLocalData("words-repaired");
+        }
       }
       return { repaired, skipped };
     }
@@ -1457,6 +1472,9 @@
       if (manualStrictTask) removeWordIdFromTaskLike(manualStrictTask, wordId);
       if (manualBatchSession?.currentTask) removeWordIdFromTaskLike(manualBatchSession.currentTask, wordId);
       recalculateLibraryState(lib);
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("word-deleted");
+      }
       alert("已删除该单词，并重新计算词库状态。");
       renderLibraryManager();
     }
@@ -1687,6 +1705,9 @@
         data.activeLibraryId = imported.libraryId;
       }
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("library-imported");
+      }
       renderApp();
     }
 
@@ -1839,6 +1860,9 @@
         lib.libraryName = document.getElementById("libraryNameInput").value.trim() || lib.libraryName;
         lib.updatedAt = todayDate();
         saveData();
+        if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+          window.cloudSync.requestAutoUploadLocalData("library-renamed");
+        }
         renderApp();
       };
       document.getElementById("deleteLibraryBtn").onclick = () => deleteLibrary(lib.libraryId);
@@ -1937,6 +1961,9 @@
       lib.words.sort((a, b) => a.index - b.index);
       lib.updatedAt = todayDate();
       saveData();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("word-order-changed");
+      }
       renderLibraryManager();
     }
 
@@ -2000,6 +2027,9 @@
           word.word = nextWordText;
           lib.updatedAt = todayDate();
           saveData();
+          if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+            window.cloudSync.requestAutoUploadLocalData("word-text-changed");
+          }
         });
       });
       document.querySelectorAll("[data-meaning-id]").forEach(input => {
@@ -2015,6 +2045,9 @@
             word.meaning = nextMeaning;
             lib.updatedAt = todayDate();
             saveData();
+            if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+              window.cloudSync.requestAutoUploadLocalData("word-meaning-changed");
+            }
           }
         });
       });
