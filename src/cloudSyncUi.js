@@ -154,7 +154,7 @@ async function autoUploadAfterDictation() {
     }
     const result = await uploadLocalDataToCloud(localData);
     if (result.blockedOlderData) {
-      setAutoUploadStatus("本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。", true, false);
+      setAutoUploadStatus("本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。请先从云端下载最新数据。", true, false);
       return;
     }
     if (result.failed > 0) {
@@ -175,6 +175,69 @@ async function autoUploadAfterDictation() {
     );
   }
 }
+
+// ── 词库/单词变更后统一自动上传入口（带 1000ms debounce 防抖）──────────────────────
+let _autoUploadTimer = null;
+
+async function _doAutoUploadForDataChange(reason) {
+  const prefix = "词库变更已保存到本机";
+  setAutoUploadStatus(prefix + "，正在自动上传云端...", false, false);
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      setAutoUploadStatus(prefix + "。当前未登录云端，未自动上传。", false, false);
+      return;
+    }
+    const localData = getLocalDataSnapshot();
+    const validation = validateLocalDataForAutoUpload(localData);
+    if (!validation.valid) {
+      const reasons = validation.reasons.join("；");
+      setAutoUploadStatus(
+        prefix + "，但本地数据结构异常，已阻止自动上传：" + reasons + "。请先检查数据。",
+        true, false
+      );
+      return;
+    }
+    const result = await uploadLocalDataToCloud(localData);
+    if (result.blockedOlderData) {
+      setAutoUploadStatus(
+        "本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。请先从云端下载最新数据。",
+        true, false
+      );
+      return;
+    }
+    if (result.failed > 0) {
+      const failReason = result.failureReasons.join("；") || "未知错误";
+      setAutoUploadStatus(
+        prefix + "，但自动上传云端失败：" + failReason + "。请稍后在工具页手动上传。",
+        true, false
+      );
+      return;
+    }
+    setAutoUploadStatus(prefix + "，并已自动上传到云端。", false, true);
+  } catch (error) {
+    setAutoUploadStatus(
+      prefix + "，但自动上传云端失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
+      true, false
+    );
+  }
+}
+
+function requestAutoUploadLocalData(reason) {
+  if (_autoUploadTimer !== null) {
+    clearTimeout(_autoUploadTimer);
+    _autoUploadTimer = null;
+  }
+  _autoUploadTimer = setTimeout(() => {
+    _autoUploadTimer = null;
+    if (reason === "dictation-complete") {
+      autoUploadAfterDictation();
+    } else {
+      _doAutoUploadForDataChange(reason || "data-changed");
+    }
+  }, 1000);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function summarizeLibrary(library) {
   if (!library) {
@@ -449,7 +512,7 @@ async function mount() {
   await refreshCloudStatus(elements);
 }
 
-window.cloudSync = { mount, autoUploadAfterDictation };
+window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData };
 
 if (supabase && !authListenerBound) {
   authListenerBound = true;

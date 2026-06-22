@@ -386,7 +386,123 @@ export async function uploadLocalDataToCloud(localData) {
         addFailure(result, batch.length, "词库“" + (library.libraryName || localLibraryId) + "”的学习进度", error);
       }
     }
+
+    // ── 安全清理云端本词库中已被本地删除的单词和听写记录 ──────────────────────────
+    // 前置条件：本词库 upsert 已成功（cloudLibrary 存在），旧窗口保护已在上方通过，
+    // 且本地旧窗口校验显示本机数据不旧于云端（才能走到这里）。
+    if (cloudLibrary) {
+      // 1. 清理已删除单词（只删有 source_local_id 的行，不触碰没有 source_local_id 的云端数据）
+      try {
+        const localWordSourceIds = new Set(localWords.map(w => String(w.id)));
+        const cloudWordsAll = await fetchAllCloudRows(
+          client, "words", "id,source_local_id",
+          q => q.eq("library_id", cloudLibrary.id).not("source_local_id", "is", null)
+        );
+        const wordsToDelete = cloudWordsAll.filter(cw => !localWordSourceIds.has(String(cw.source_local_id)));
+        if (wordsToDelete.length > 0) {
+          const deleteWordIds = wordsToDelete.map(cw => cw.id);
+          // 先删 user_word_progress（外键依赖）
+          for (const batch of chunkRows(deleteWordIds)) {
+            const { error: progDeleteError } = await client
+              .from("user_word_progress")
+              .delete()
+              .eq("user_id", user.id)
+              .eq("library_id", cloudLibrary.id)
+              .in("word_id", batch);
+            if (progDeleteError) throw progDeleteError;
+          }
+          // 再删 words
+          for (const batch of chunkRows(deleteWordIds)) {
+            const { error: wordDeleteError } = await client
+              .from("words")
+              .delete()
+              .eq("library_id", cloudLibrary.id)
+              .in("id", batch);
+            if (wordDeleteError) throw wordDeleteError;
+          }
+          result.deletedWords = (result.deletedWords || 0) + wordsToDelete.length;
+        }
+      } catch (error) {
+        addFailure(result, 1, "词库“" + (library.libraryName || localLibraryId) + "”的删除单词同步", error);
+      }
+
+      // 2. 清理已删除听写记录（只删有 source_local_id 的行）
+      try {
+        const localSessionSourceIds = new Set(
+          (library.dailyRecords || []).map(r => recordSourceLocalId(r))
+        );
+        const cloudSessionsAll = await fetchAllCloudRows(
+          client, "dictation_sessions", "id,source_local_id",
+          q => q.eq("user_id", user.id).eq("library_id", cloudLibrary.id).not("source_local_id", "is", null)
+        );
+        const sessionsToDelete = cloudSessionsAll.filter(cs => !localSessionSourceIds.has(String(cs.source_local_id)));
+        if (sessionsToDelete.length > 0) {
+          const deleteSessionIds = sessionsToDelete.map(cs => cs.id);
+          for (const batch of chunkRows(deleteSessionIds)) {
+            const { error: sessionDeleteError } = await client
+              .from("dictation_sessions")
+              .delete()
+              .eq("user_id", user.id)
+              .in("id", batch);
+            if (sessionDeleteError) throw sessionDeleteError;
+          }
+          result.deletedSessions = (result.deletedSessions || 0) + sessionsToDelete.length;
+        }
+      } catch (error) {
+        addFailure(result, 1, "词库“" + (library.libraryName || localLibraryId) + "”的删除记录同步", error);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
   }
+
+  // ── 安全清理云端本用户已被本地删除的词库 ─────────────────────────────────────────
+  // 只清理有 source_local_id、且本地已不存在的词库行；不碰没有 source_local_id 的数据。
+  // 只在旧窗口保护已全部通过（blockedOlderData === false）时才执行。
+  if (!result.blockedOlderData) {
+    try {
+      const localLibrarySourceIds = new Set(
+        localData.libraries.map(lib => String(lib.libraryId || "").trim()).filter(Boolean)
+      );
+      const cloudLibrariesAll = await fetchAllCloudRows(
+        client, "libraries", "id,source_local_id",
+        q => q.eq("owner_id", user.id).not("source_local_id", "is", null)
+      );
+      const librariesToDelete = cloudLibrariesAll.filter(
+        cl => !localLibrarySourceIds.has(String(cl.source_local_id))
+      );
+      for (const cloudLib of librariesToDelete) {
+        try {
+          // 依次级联删除：进度 → 听写记录 → 单词 → 词库设置 → 词库
+          const cloudLibWords = await fetchAllCloudRows(
+            client, "words", "id",
+            q => q.eq("library_id", cloudLib.id)
+          );
+          if (cloudLibWords.length > 0) {
+            const allWordIds = cloudLibWords.map(w => w.id);
+            for (const batch of chunkRows(allWordIds)) {
+              await client.from("user_word_progress").delete()
+                .eq("user_id", user.id).eq("library_id", cloudLib.id).in("word_id", batch);
+            }
+            for (const batch of chunkRows(allWordIds)) {
+              await client.from("words").delete().eq("library_id", cloudLib.id).in("id", batch);
+            }
+          }
+          await client.from("dictation_sessions").delete()
+            .eq("user_id", user.id).eq("library_id", cloudLib.id);
+          await client.from("user_library_settings").delete()
+            .eq("user_id", user.id).eq("library_id", cloudLib.id);
+          await client.from("libraries").delete()
+            .eq("owner_id", user.id).eq("id", cloudLib.id);
+          result.deletedLibraries = (result.deletedLibraries || 0) + 1;
+        } catch (error) {
+          addFailure(result, 1, "云端词库残留清理（id=" + cloudLib.id + "）", error);
+        }
+      }
+    } catch (error) {
+      addFailure(result, 1, "云端词库残留清理列表获取", error);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return result;
 }
