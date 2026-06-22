@@ -580,16 +580,82 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
+    function validateAllDataImportObject(imported) {
+      return Boolean(imported && typeof imported === "object" && Array.isArray(imported.libraries));
+    }
+
+    function applyAllDataImportObject(imported, options = {}) {
+      if (!validateAllDataImportObject(imported)) {
+        throw new Error("这不是有效的全部数据 JSON");
+      }
+      const nextData = imported;
+      nextData.version = nextData.version || APP_VERSION;
+      nextData.libraries.forEach(lib => {
+        migrateLibrary(lib);
+        migrateWrongReviewRule(lib, { preserveDraft: true });
+      });
+      const activeExists = nextData.libraries.some(lib => lib.libraryId === nextData.activeLibraryId);
+      if (!activeExists) nextData.activeLibraryId = nextData.libraries[0]?.libraryId || null;
+      data = nextData;
+      saveData();
+      if (options.render !== false) renderApp();
+      return data;
+    }
+
     window.getLocalDictationDataForCloudUpload = function() {
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     };
 
-    window.replaceLocalDictationDataFromCloud = function(restoredData) {
-      if (!restoredData || !Array.isArray(restoredData.libraries)) {
-        throw new Error("云端恢复数据格式无效");
+    window.validateCloudRestoredDataForImport = function(restoredData, cloudCounts = {}) {
+      const reasons = [];
+      if (!validateAllDataImportObject(restoredData)) {
+        reasons.push("不是有效的全部数据 JSON 结构");
+        return { valid: false, reasons, counts: { libraries: 0, words: 0, sessions: 0 } };
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredData));
+      const libraries = restoredData.libraries;
+      const wordCount = libraries.reduce((sum, lib) => sum + (Array.isArray(lib.words) ? lib.words.length : 0), 0);
+      const sessionCount = libraries.reduce((sum, lib) => sum + (Array.isArray(lib.dailyRecords) ? lib.dailyRecords.length : 0), 0);
+      if (!libraries.length) reasons.push("恢复数据中没有词库");
+      if (!wordCount) reasons.push("恢复数据中没有单词");
+      if (Number(cloudCounts.sessions || 0) > 0 && !sessionCount) {
+        reasons.push("云端有听写记录，但恢复数据中没有 dailyRecords");
+      }
+      if (!restoredData.activeLibraryId) {
+        reasons.push("缺少 activeLibraryId");
+      } else if (!libraries.some(lib => lib.libraryId === restoredData.activeLibraryId)) {
+        reasons.push("activeLibraryId 找不到对应词库");
+      }
+      libraries.forEach((lib, index) => {
+        const label = "第 " + (index + 1) + " 个词库";
+        if (!lib || typeof lib !== "object") {
+          reasons.push(label + "结构无效");
+          return;
+        }
+        if (!lib.libraryId) reasons.push(label + "缺少 libraryId");
+        if (!Array.isArray(lib.words)) reasons.push(label + "缺少 words 数组");
+        if (!Array.isArray(lib.dailyRecords)) reasons.push(label + "缺少 dailyRecords 数组");
+        if (!lib.settings || typeof lib.settings !== "object") reasons.push(label + "缺少 settings");
+        if (Array.isArray(lib.words)) {
+          lib.words.forEach((word, wordIndex) => {
+            if (!word?.id) reasons.push(label + "的第 " + (wordIndex + 1) + " 个单词缺少 id");
+          });
+        }
+      });
+      try {
+        JSON.stringify(restoredData);
+      } catch (error) {
+        reasons.push("恢复数据无法转换为 JSON：" + error.message);
+      }
+      return {
+        valid: reasons.length === 0,
+        reasons,
+        counts: { libraries: libraries.length, words: wordCount, sessions: sessionCount }
+      };
+    };
+
+    window.replaceLocalDictationDataFromCloud = function(restoredData) {
+      return applyAllDataImportObject(restoredData, { render: false });
     };
 
     function migrateLibrary(lib) {
@@ -1607,7 +1673,7 @@
         alert("JSON 格式不正确。");
         return;
       }
-      if (!imported || !Array.isArray(imported.libraries)) {
+      if (!validateAllDataImportObject(imported)) {
         alert("这不是有效的全部数据 JSON。");
         return;
       }
@@ -1615,14 +1681,7 @@
       if (!first) return;
       const second = confirm("请再次确认：当前所有词库、进度和错词记录都会被替换。");
       if (!second) return;
-      data = imported;
-      data.libraries.forEach(lib => {
-        migrateLibrary(lib);
-        migrateWrongReviewRule(lib, { preserveDraft: true });
-      });
-      if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
-      saveData();
-      renderApp();
+      applyAllDataImportObject(imported);
     }
 
     function sourceTagHtml(sources) {
