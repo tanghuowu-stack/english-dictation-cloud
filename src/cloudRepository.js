@@ -471,6 +471,7 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
     skipped: 0,
     failed: 0,
     failureReasons: [],
+    cloudCounts: null,
     restoredData: null
   };
 
@@ -510,6 +511,12 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
     "id,user_id,library_id,word_id,first_learn_day,wrong_count,is_pending_wrong,correct_streak,wrong_review_due_day,wrong_review_stage,last_exited_wrong_pool_day,created_at,updated_at",
     query => query.eq("user_id", user.id)
   );
+  result.cloudCounts = {
+    libraries: cloudLibraries.length,
+    words: cloudWords.length,
+    sessions: cloudSessions.length,
+    progress: cloudProgress.length
+  };
 
   const usedLibraryIds = new Set();
   const cloudLibraryToLocalId = new Map();

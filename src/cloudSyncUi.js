@@ -92,6 +92,13 @@ function replaceLocalData(restoredData) {
   window.replaceLocalDictationDataFromCloud(restoredData);
 }
 
+function validateRestoredData(restoredData, cloudCounts) {
+  if (typeof window.validateCloudRestoredDataForImport !== "function") {
+    return { valid: false, reasons: ["当前页面缺少恢复结构校验函数"] };
+  }
+  return window.validateCloudRestoredDataForImport(restoredData, cloudCounts);
+}
+
 function getLocalDataSnapshot() {
   if (typeof window.getLocalDictationDataForCloudUpload !== "function") {
     throw new Error("无法读取本地听写数据");
@@ -171,7 +178,7 @@ function formatRestoreResult(result) {
   } else {
     lines.push("失败原因：无");
   }
-  lines.push("本地数据已经写入，请刷新页面后使用恢复的数据。");
+  lines.push("恢复已写入本机 localStorage。请刷新页面检查词库和记录。");
   return lines.join("\n");
 }
 
@@ -189,6 +196,15 @@ async function downloadCloudData(elements) {
   try {
     const currentLocalData = getLocalDataSnapshot();
     const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0");
+    const validation = validateRestoredData(result.restoredData, result.cloudCounts || {});
+    if (!validation.valid) {
+      setMessage(
+        elements.actionMessage,
+        "云端数据已下载，但恢复结构校验失败，未覆盖本机数据。\n失败原因：\n- " + validation.reasons.join("\n- "),
+        true
+      );
+      return;
+    }
     replaceLocalData(result.restoredData);
     setMessage(elements.actionMessage, formatRestoreResult(result), result.failed > 0);
     elements.reload.hidden = false;
