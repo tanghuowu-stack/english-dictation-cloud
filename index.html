@@ -616,10 +616,26 @@
       const libraries = restoredData.libraries;
       const wordCount = libraries.reduce((sum, lib) => sum + (Array.isArray(lib.words) ? lib.words.length : 0), 0);
       const sessionCount = libraries.reduce((sum, lib) => sum + (Array.isArray(lib.dailyRecords) ? lib.dailyRecords.length : 0), 0);
+      const learnedCount = libraries.reduce((sum, lib) => {
+        const taskIds = new Set((lib.dailyRecords || []).flatMap(record => record.taskWordIds || []));
+        return sum + (lib.words || []).filter(word => {
+          const day = Number(word.firstLearnDay);
+          return (word.firstLearnDay != null && Number.isFinite(day) && day > 0) || taskIds.has(word.id);
+        }).length;
+      }, 0);
       if (!libraries.length) reasons.push("恢复数据中没有词库");
       if (!wordCount) reasons.push("恢复数据中没有单词");
+      if (Number(cloudCounts.words || 0) > 0 && wordCount !== Number(cloudCounts.words)) {
+        reasons.push("恢复单词数 " + wordCount + " 与云端 words 数 " + cloudCounts.words + " 不一致");
+      }
       if (Number(cloudCounts.sessions || 0) > 0 && !sessionCount) {
         reasons.push("云端有听写记录，但恢复数据中没有 dailyRecords");
+      }
+      if (Number(cloudCounts.sessions || 0) !== sessionCount) {
+        reasons.push("恢复听写记录数 " + sessionCount + " 与云端记录数 " + Number(cloudCounts.sessions || 0) + " 不一致");
+      }
+      if (cloudCounts.derivedLearned != null && learnedCount !== Number(cloudCounts.derivedLearned)) {
+        reasons.push("恢复已学词数 " + learnedCount + " 与云端进度/记录推导数 " + cloudCounts.derivedLearned + " 不一致");
       }
       if (!restoredData.activeLibraryId) {
         reasons.push("缺少 activeLibraryId");
@@ -642,6 +658,13 @@
           });
         }
       });
+      const activeLibrary = libraries.find(lib => lib.libraryId === restoredData.activeLibraryId);
+      const currentDay = activeLibrary?.dailyRecords?.length
+        ? Math.max(...activeLibrary.dailyRecords.map(record => Number(record.dayNumber || 0))) + 1
+        : 1;
+      if (currentDay <= 13 && wordCount === 595 && learnedCount === 595) {
+        reasons.push("检测到低 Day 下 595 个词全部已学的异常状态");
+      }
       try {
         JSON.stringify(restoredData);
       } catch (error) {
@@ -650,7 +673,7 @@
       return {
         valid: reasons.length === 0,
         reasons,
-        counts: { libraries: libraries.length, words: wordCount, sessions: sessionCount }
+        counts: { libraries: libraries.length, words: wordCount, learned: learnedCount, sessions: sessionCount, currentDay }
       };
     };
 
@@ -3189,6 +3212,7 @@
             <div class="row mobile-full" style="margin-top:12px">
               <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
               <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
+              <button class="secondary" id="cloudDiagnoseBtn" type="button" disabled>诊断本机与云端数据</button>
               <button class="danger" id="cloudDownloadBtn" type="button" disabled>从云端下载到本机</button>
             </div>
             <div class="small muted" style="margin-top:8px">用于在新设备或空浏览器中恢复云端数据。会覆盖当前设备的本地数据，请先备份。</div>
@@ -3198,6 +3222,7 @@
               <div class="stat"><div class="small muted">云端听写记录</div><div class="num" id="cloudSessionCount">0</div></div>
               <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
             </div>
+            <div class="notice small" id="cloudDiagnosticOutput" style="margin-top:12px; white-space:pre-wrap" hidden></div>
             <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
             <button class="secondary" id="cloudReloadBtn" type="button" style="margin-top:10px" hidden>刷新页面并使用恢复的数据</button>
           </section>
