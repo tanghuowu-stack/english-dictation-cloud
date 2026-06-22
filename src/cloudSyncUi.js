@@ -1,5 +1,6 @@
 import { cloudConfigurationMessage, isCloudConfigured, supabase } from "./supabaseClient.js";
 import {
+  downloadCloudDataForLocalStorage,
   getCloudDataSummary,
   getCurrentUser,
   uploadLocalDataToCloud
@@ -19,6 +20,8 @@ function getCloudElements() {
     message: document.getElementById("cloudSyncMessage"),
     upload: document.getElementById("cloudUploadBtn"),
     summary: document.getElementById("cloudSummaryBtn"),
+    download: document.getElementById("cloudDownloadBtn"),
+    reload: document.getElementById("cloudReloadBtn"),
     summaryPanel: document.getElementById("cloudDataSummary"),
     libraryCount: document.getElementById("cloudLibraryCount"),
     wordCount: document.getElementById("cloudWordCount"),
@@ -47,6 +50,8 @@ async function refreshCloudStatus(elements) {
     elements.logout.hidden = true;
     elements.upload.disabled = true;
     elements.summary.disabled = true;
+    elements.download.disabled = true;
+    elements.reload.hidden = true;
     elements.summaryPanel.hidden = true;
     setMessage(elements.message, cloudConfigurationMessage, true);
     return;
@@ -63,14 +68,28 @@ async function refreshCloudStatus(elements) {
     elements.logout.hidden = !user;
     elements.upload.disabled = !user;
     elements.summary.disabled = !user;
-    if (!user) elements.summaryPanel.hidden = true;
+    elements.download.disabled = !user;
+    if (!user) {
+      elements.summaryPanel.hidden = true;
+      elements.reload.hidden = true;
+    }
     if (user) setMessage(elements.message, "当前仅显示登录状态，尚未启用自动同步。", false);
     else setMessage(elements.message, "未登录时仍可继续使用全部本地功能。", false);
   } catch (error) {
     elements.mode.textContent = "云端已配置";
     elements.user.textContent = "状态读取失败";
+    elements.upload.disabled = true;
+    elements.summary.disabled = true;
+    elements.download.disabled = true;
     setMessage(elements.message, error.message || "云端状态读取失败", true);
   }
+}
+
+function replaceLocalData(restoredData) {
+  if (typeof window.replaceLocalDictationDataFromCloud !== "function") {
+    throw new Error("当前页面无法写入恢复数据");
+  }
+  window.replaceLocalDictationDataFromCloud(restoredData);
 }
 
 function getLocalDataSnapshot() {
@@ -136,6 +155,54 @@ async function showCloudSummary(elements) {
   }
 }
 
+function formatRestoreResult(result) {
+  const lines = [
+    result.failed > 0 ? "恢复完成，但有部分项目未恢复。" : "恢复成功。",
+    "词库数量：" + result.libraries,
+    "单词数量：" + result.words,
+    "听写记录数量：" + result.sessions,
+    "学习/错词进度数量：" + result.progress,
+    "是否有跳过项目：" + (result.skipped > 0 ? "是（" + result.skipped + "）" : "否"),
+    "失败数量：" + result.failed
+  ];
+  if (result.failureReasons.length) {
+    lines.push("失败原因：");
+    result.failureReasons.forEach(reason => lines.push("- " + reason));
+  } else {
+    lines.push("失败原因：无");
+  }
+  lines.push("本地数据已经写入，请刷新页面后使用恢复的数据。");
+  return lines.join("\n");
+}
+
+async function downloadCloudData(elements) {
+  const confirmed = window.confirm(
+    "请先在当前设备导出本地 JSON 备份。本操作会把云端数据下载到当前浏览器，并覆盖当前浏览器 localStorage。不会删除云端数据。确定继续吗？"
+  );
+  if (!confirmed) return;
+
+  elements.upload.disabled = true;
+  elements.summary.disabled = true;
+  elements.download.disabled = true;
+  elements.reload.hidden = true;
+  setMessage(elements.actionMessage, "正在读取并还原云端数据，请不要关闭页面...", false);
+  try {
+    const currentLocalData = getLocalDataSnapshot();
+    const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0");
+    replaceLocalData(result.restoredData);
+    setMessage(elements.actionMessage, formatRestoreResult(result), result.failed > 0);
+    elements.reload.hidden = false;
+  } catch (error) {
+    setMessage(
+      elements.actionMessage,
+      "恢复失败：" + (error.message || "网络错误") + "。本地数据没有被覆盖。",
+      true
+    );
+  } finally {
+    await refreshCloudStatus(elements);
+  }
+}
+
 async function signInWithEmailPassword(elements) {
   const email = String(elements.email.value || "").trim();
   const password = String(elements.password.value || "");
@@ -186,6 +253,8 @@ async function mount() {
   elements.logout.onclick = () => signOut(elements);
   elements.upload.onclick = () => uploadLocalData(elements);
   elements.summary.onclick = () => showCloudSummary(elements);
+  elements.download.onclick = () => downloadCloudData(elements);
+  elements.reload.onclick = () => window.location.reload();
   [elements.email, elements.password].forEach(input => {
     input.onkeydown = event => {
       if (event.key === "Enter") {

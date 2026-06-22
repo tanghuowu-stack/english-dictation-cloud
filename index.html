@@ -585,6 +585,13 @@
       return raw ? JSON.parse(raw) : null;
     };
 
+    window.replaceLocalDictationDataFromCloud = function(restoredData) {
+      if (!restoredData || !Array.isArray(restoredData.libraries)) {
+        throw new Error("云端恢复数据格式无效");
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredData));
+    };
+
     function migrateLibrary(lib) {
       lib.libraryId = lib.libraryId || uid("lib");
       lib.libraryName = lib.libraryName || "未命名词库";
@@ -3123,7 +3130,9 @@
             <div class="row mobile-full" style="margin-top:12px">
               <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
               <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
+              <button class="danger" id="cloudDownloadBtn" type="button" disabled>从云端下载到本机</button>
             </div>
+            <div class="small muted" style="margin-top:8px">用于在新设备或空浏览器中恢复云端数据。会覆盖当前设备的本地数据，请先备份。</div>
             <div class="stats" id="cloudDataSummary" style="margin-top:12px" hidden>
               <div class="stat"><div class="small muted">云端词库</div><div class="num" id="cloudLibraryCount">0</div></div>
               <div class="stat"><div class="small muted">云端单词</div><div class="num" id="cloudWordCount">0</div></div>
@@ -3131,6 +3140,7 @@
               <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
             </div>
             <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
+            <button class="secondary" id="cloudReloadBtn" type="button" style="margin-top:10px" hidden>刷新页面并使用恢复的数据</button>
           </section>
 
           <section class="card span-12">
