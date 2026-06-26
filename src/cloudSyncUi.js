@@ -90,7 +90,7 @@ async function refreshCloudStatus(elements) {
       elements.summaryPanel.hidden = true;
       elements.reload.hidden = true;
     }
-    if (user) setMessage(elements.message, "已登录云端；听写完成后会自动上传，下载和覆盖仍需手动操作。", false);
+    if (user) setMessage(elements.message, "已登录云端；数据变更后会自动上传，切回前台/刷新时会自动检查云端并同步。", false);
     else setMessage(elements.message, "未登录时仍可继续使用全部本地功能。", false);
   } catch (error) {
     elements.mode.textContent = "云端已配置";
@@ -168,6 +168,9 @@ async function autoUploadAfterDictation() {
       );
       return;
     }
+    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
+      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
+    }
     setAutoUploadStatus("本次听写已保存到本机，并已自动上传到云端。", false, true);
   } catch (error) {
     setAutoUploadStatus(
@@ -215,6 +218,9 @@ async function _doAutoUploadForDataChange(reason) {
         true, false
       );
       return;
+    }
+    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
+      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
     }
     setAutoUploadStatus(prefix + "，并已自动上传到云端。", false, true);
   } catch (error) {
@@ -540,6 +546,15 @@ async function checkCloudFreshness() {
     if (signals.sessionCount > localSessionCount) return true;
     if (signals.maxDayNumber > localMaxDay) return true;
     if (signals.learnedCount > localLearnedCount) return true;
+
+    // 第四个信号：时间戳比较，用于捕获"删除/撤销"等让数量减少的操作
+    if (signals.maxLibraryUpdatedAt) {
+      const localMaxUpdatedAt = libraries.reduce((max, lib) => {
+        const ts = lib.updatedAt || "";
+        return ts > max ? ts : max;
+      }, "");
+      if (localMaxUpdatedAt && signals.maxLibraryUpdatedAt > localMaxUpdatedAt) return true;
+    }
 
     return false;
   } catch {

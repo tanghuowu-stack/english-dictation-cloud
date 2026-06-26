@@ -875,7 +875,7 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
       libraryId: cloudLibraryToLocalId.get(cloudLibrary.id),
       libraryName: cloudLibrary.name || "未命名词库",
       createdAt: datePart(cloudLibrary.created_at, new Date().toISOString().slice(0, 10)),
-      updatedAt: datePart(cloudLibrary.updated_at, new Date().toISOString().slice(0, 10)),
+      updatedAt: cloudLibrary.updated_at || new Date().toISOString(),
       settings: restoredSettings(settingsByLibraryId.get(cloudLibrary.id)),
       words,
       dailyRecords,
@@ -944,9 +944,18 @@ export async function getCloudFreshnessSignals() {
     .gt("first_learn_day", 0);
   if (learnedError) throw learnedError;
 
+  const { data: maxUpdatedRows, error: maxUpdatedError } = await client
+    .from("libraries")
+    .select("updated_at")
+    .eq("owner_id", user.id)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (maxUpdatedError) throw maxUpdatedError;
+
   return {
     sessionCount: Number(sessionCount || 0),
     maxDayNumber: Number(maxDayRows?.[0]?.day_number ?? 0),
-    learnedCount: Number(learnedCount || 0)
+    learnedCount: Number(learnedCount || 0),
+    maxLibraryUpdatedAt: maxUpdatedRows?.[0]?.updated_at || null
   };
 }

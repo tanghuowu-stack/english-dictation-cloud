@@ -704,11 +704,19 @@
       return applyAllDataImportObject(restoredData, { render: false });
     };
 
+    window.updateLocalLibraryUpdatedAt = function(isoTimestamp) {
+      const ts = isoTimestamp || new Date().toISOString();
+      if (data && Array.isArray(data.libraries)) {
+        data.libraries.forEach(lib => { lib.updatedAt = ts; });
+        saveData();
+      }
+    };
+
     function migrateLibrary(lib) {
       lib.libraryId = lib.libraryId || uid("lib");
       lib.libraryName = lib.libraryName || "未命名词库";
       lib.createdAt = lib.createdAt || todayDate();
-      lib.updatedAt = lib.updatedAt || todayDate();
+      lib.updatedAt = lib.updatedAt || new Date().toISOString();
       const existingSettings = lib.settings || {};
       const shouldMigrateSplitCount = existingSettings.dailyReviewWords == null && existingSettings.countMode !== "split-new-review";
       lib.settings = Object.assign({}, DEFAULT_SETTINGS, existingSettings);
@@ -788,7 +796,7 @@
         libraryId: uid("lib"),
         libraryName: String(name || "新词库").trim() || "新词库",
         createdAt: todayDate(),
-        updatedAt: todayDate(),
+        updatedAt: new Date().toISOString(),
         settings: Object.assign({}, DEFAULT_SETTINGS),
         words: [],
         dailyRecords: [],
@@ -840,7 +848,7 @@
       const lib = getCurrentLibrary();
       if (!lib) return;
       lib.settings = Object.assign({}, lib.settings, partial);
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("settings-changed");
@@ -923,7 +931,7 @@
         usedIds.add(word.id);
         added += 1;
       });
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("words-imported");
@@ -951,7 +959,7 @@
         repaired += 1;
       });
       if (repaired) {
-        lib.updatedAt = todayDate();
+        lib.updatedAt = new Date().toISOString();
         saveData();
         if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
           window.cloudSync.requestAutoUploadLocalData("words-repaired");
@@ -1252,7 +1260,7 @@
       summary.recordId = record.recordId;
       lib.dailyRecords.push(record);
       lib.currentDraftTask = null;
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       todaySummary = summary;
       dictationIndex = 0;
       stopAutoPlay();
@@ -1284,7 +1292,7 @@
       todaySummary = null;
       dictationIndex = 0;
       recalculateLibraryState(lib);
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       saveData();
       renderApp();
       // 先删云端对应 session，避免自动拉取把记录重新同步回来
@@ -1454,7 +1462,7 @@
         .sort((a, b) => Number(a.dayNumber) - Number(b.dayNumber))
         .forEach(record => updateWordStatsFromRecord(lib, record));
       lib.currentDraftTask = options.preserveDraft ? draftTask : null;
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       if (!options.silent) saveData();
     }
 
@@ -1698,7 +1706,7 @@
         word.lastWrongDate = word.lastWrongDate || todayDate();
       }
       applyWrongFlags(word);
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       saveData();
       renderApp();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
@@ -1891,7 +1899,7 @@
       };
       document.getElementById("renameLibraryBtn").onclick = () => {
         lib.libraryName = document.getElementById("libraryNameInput").value.trim() || lib.libraryName;
-        lib.updatedAt = todayDate();
+        lib.updatedAt = new Date().toISOString();
         saveData();
         if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
           window.cloudSync.requestAutoUploadLocalData("library-renamed");
@@ -1992,7 +2000,7 @@
         .map(word => isWordLearnedLocked(lib, word) ? word : queue.shift());
       nextWords.forEach((word, index) => word.index = index);
       lib.words.sort((a, b) => a.index - b.index);
-      lib.updatedAt = todayDate();
+      lib.updatedAt = new Date().toISOString();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("word-order-changed");
@@ -2058,7 +2066,7 @@
             }
           }
           word.word = nextWordText;
-          lib.updatedAt = todayDate();
+          lib.updatedAt = new Date().toISOString();
           saveData();
           if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
             window.cloudSync.requestAutoUploadLocalData("word-text-changed");
@@ -2076,7 +2084,7 @@
               return;
             }
             word.meaning = nextMeaning;
-            lib.updatedAt = todayDate();
+            lib.updatedAt = new Date().toISOString();
             saveData();
             if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
               window.cloudSync.requestAutoUploadLocalData("word-meaning-changed");
@@ -3278,7 +3286,7 @@
 
           <section class="card span-12" id="cloudSyncPanel">
             <h3>云端同步</h3>
-            <div class="small muted">听写完成后会自动上传最新本地数据；云端下载和本机覆盖仍只允许手动操作。</div>
+            <div class="small muted">数据变更后会自动上传；切回前台或刷新页面时会自动检查云端并同步。覆盖本机数据仍需手动操作。</div>
             <div class="stats" style="margin-top:12px">
               <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
               <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
@@ -3426,7 +3434,7 @@
           const record = lib.dailyRecords.find(item => item.recordId === input.dataset.recordDate);
           if (!record) return;
           record.date = input.value || todayDate();
-          lib.updatedAt = todayDate();
+          lib.updatedAt = new Date().toISOString();
           saveData();
         };
       });
