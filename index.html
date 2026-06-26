@@ -249,7 +249,7 @@
       display: inline-flex;
       align-items: center;
       min-height: 26px;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: #f8fafc;
@@ -258,11 +258,34 @@
       white-space: nowrap;
     }
 
+    .tag + .tag { margin-left: 5px; }
+
     .tag.new { border-color: #95c4e6; color: #175c92; background: #edf7ff; }
     .tag.wrong { border-color: #f0b3ad; color: #9a2218; background: #fff3f1; }
     .tag.review { border-color: #d8ba72; color: #7a5100; background: #fff8e8; }
     .tag.multi { border-color: #a6a9d9; color: #373088; background: #f1f0ff; }
     .tag.ok { border-color: #8dc7b2; color: #0d5d45; background: #eefaf5; }
+
+    /* 今日任务横幅：视觉权重最高 */
+    .today-banner .stat { min-height: 84px; }
+    .today-banner .stat .num { font-size: 30px; }
+
+    /* 次要信息条：长期进度，退居二线 */
+    .secondary-bar { padding: 10px 14px; }
+    .secondary-bar .stats { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .secondary-bar .stat {
+      min-height: 48px;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+    .secondary-bar .stat .num { font-size: 16px; font-weight: 700; color: var(--muted); }
+
+    /* 危险操作区块顶部分隔 */
+    .danger-zone-section {
+      border-top: 2px solid #f0b3ad;
+      margin-top: 8px;
+    }
 
     table {
       width: 100%;
@@ -2082,6 +2105,8 @@
         return;
       }
 
+      const categoryCounts = task ? getTaskCategoryCounts(task) : null;
+
       app.innerHTML = `
         <div class="grid">
           <section class="card span-12">
@@ -2097,12 +2122,22 @@
             </div>
           </section>
 
-          <section class="card span-12">
+          ${categoryCounts ? `
+          <section class="card span-12 today-banner">
+            <div class="stats">
+              <div class="stat"><div class="small muted">今日总词数</div><div class="num">${categoryCounts.total}</div></div>
+              <div class="stat"><div class="small muted">今日新词</div><div class="num">${categoryCounts.new}</div></div>
+              <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${categoryCounts.wrong}</div></div>
+              <div class="stat"><div class="small muted">今日到期复查</div><div class="num">${categoryCounts.review}</div></div>
+            </div>
+          </section>
+          ` : ''}
+
+          <section class="card span-12 secondary-bar">
             <div class="stats">
               <div class="stat"><div class="small muted">当前学习 Day</div><div class="num">${dayNumber}</div></div>
-              <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
-              <div class="stat"><div class="small muted">到期错词复查</div><div class="num">${dueCount}</div></div>
               <div class="stat"><div class="small muted">已学 / 总数</div><div class="num">${learned} / ${lib.words.length}</div></div>
+              <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
             </div>
           </section>
 
@@ -2193,13 +2228,7 @@
       return `
         <section class="card span-12">
           <div class="notice small" style="margin-bottom:12px">${renderTaskCountSummary(categoryCounts)}</div>
-          <div class="stats">
-            <div class="stat"><div class="small muted">今日总词数</div><div class="num">${categoryCounts.total}</div></div>
-            <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${categoryCounts.wrong}</div></div>
-            <div class="stat"><div class="small muted">今日到期错词复查</div><div class="num">${categoryCounts.review}</div></div>
-            <div class="stat"><div class="small muted">今日新词</div><div class="num">${categoryCounts.new}</div></div>
-          </div>
-          <div class="row" style="margin-top:12px">
+          <div class="row" style="margin-top:4px">
             <label style="max-width:220px">本次记录日期
               <input id="taskDateInput" type="date" value="${escapeHtml(task.date || todayDate())}">
             </label>
@@ -2570,7 +2599,7 @@
 
     function renderWrongBook() {
       const lib = getCurrentLibrary();
-      const filter = document.getElementById("wrongFilter")?.value || "all";
+      const filter = document.getElementById("wrongFilter")?.value || "pending";
       const sort = document.getElementById("wrongSort")?.value || "count";
       let words = lib.words.filter(word => word.wrongCount > 0 || word.isPendingWrong);
       if (filter === "pending") words = words.filter(word => word.isPendingWrong);
@@ -2595,8 +2624,8 @@
               <div class="row">
                 <label>筛选
                   <select id="wrongFilter">
-                    <option value="all">全部错词</option>
                     <option value="pending">当前错词池</option>
+                    <option value="all">全部错词</option>
                     <option value="focus">重点错词</option>
                     <option value="stubborn">顽固错词</option>
                   </select>
@@ -3268,19 +3297,6 @@
           </section>
 
           <section class="card span-12">
-            <h3>手动校准</h3>
-            <div class="notice small">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
-            <div class="tabs" style="margin-top:12px">
-              <button class="secondary" data-manual-tab="batch">连续按天补录</button>
-              <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
-              <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
-              <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
-              <button class="secondary" data-manual-tab="history">历史记录修改</button>
-            </div>
-            <div id="manualContent" style="margin-top:12px"></div>
-          </section>
-
-          <section class="card span-12">
             <h3>数据备份</h3>
             <div class="notice small">导入会覆盖数据，操作前建议先导出全部数据备份。</div>
             <div class="row mobile-full" style="margin-top:12px">
@@ -3295,7 +3311,20 @@
           </section>
 
           <section class="card span-12">
-            <h3>危险操作</h3>
+            <h3>手动校准</h3>
+            <div class="notice small">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
+            <div class="tabs" style="margin-top:12px">
+              <button class="secondary" data-manual-tab="batch">连续按天补录</button>
+              <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
+              <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
+              <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
+              <button class="secondary" data-manual-tab="history">历史记录修改</button>
+            </div>
+            <div id="manualContent" style="margin-top:12px"></div>
+          </section>
+
+          <section class="card span-12 danger-zone-section">
+            <h3 style="color:var(--danger)">危险操作</h3>
             <div class="notice small">这些操作会改变学习记录。操作前建议先导出全部数据备份。</div>
             <div class="row mobile-full" style="margin-top:12px">
               <button class="danger" id="undoLatestRecordBtn">撤销最近一次完成记录</button>
