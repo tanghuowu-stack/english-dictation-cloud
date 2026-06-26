@@ -615,6 +615,24 @@ async function autoSyncCloudToLocalIfNewer() {
     _autoSyncInProgress = false;
   }
 }
+
+// ── 低频定时自动同步（每3分钟，后台时暂停）──────────────────────────────────────
+let _periodicSyncTimer = null;
+const PERIODIC_SYNC_INTERVAL_MS = 3 * 60 * 1000;
+
+function startPeriodicSync() {
+  if (_periodicSyncTimer !== null) return;
+  _periodicSyncTimer = setInterval(() => {
+    autoSyncCloudToLocalIfNewer();
+  }, PERIODIC_SYNC_INTERVAL_MS);
+}
+
+function stopPeriodicSync() {
+  if (_periodicSyncTimer !== null) {
+    clearInterval(_periodicSyncTimer);
+    _periodicSyncTimer = null;
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function mount() {
@@ -641,7 +659,7 @@ async function mount() {
   await refreshCloudStatus(elements);
 }
 
-window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData, autoSyncCloudToLocalIfNewer, deleteSessionAndSync };
+window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData, autoSyncCloudToLocalIfNewer, deleteSessionAndSync, startPeriodicSync, stopPeriodicSync };
 
 if (supabase && !authListenerBound) {
   authListenerBound = true;

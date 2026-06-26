@@ -1813,6 +1813,9 @@
           viewName = button.dataset.view;
           todaySummary = null;
           renderApp();
+          if (viewName === "today" && window.cloudSync?.autoSyncCloudToLocalIfNewer) {
+            window.cloudSync.autoSyncCloudToLocalIfNewer();
+          }
         });
       });
     }
@@ -3940,10 +3943,16 @@
       if (window.cloudSync?.autoSyncCloudToLocalIfNewer) {
         window.cloudSync.autoSyncCloudToLocalIfNewer();
       }
+      window.cloudSync?.startPeriodicSync?.();
     });
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && window.cloudSync?.autoSyncCloudToLocalIfNewer) {
-        window.cloudSync.autoSyncCloudToLocalIfNewer();
+      if (document.visibilityState === "visible") {
+        if (window.cloudSync?.autoSyncCloudToLocalIfNewer) {
+          window.cloudSync.autoSyncCloudToLocalIfNewer();
+        }
+        window.cloudSync?.startPeriodicSync?.();
+      } else {
+        window.cloudSync?.stopPeriodicSync?.();
       }
     });
   </script>
