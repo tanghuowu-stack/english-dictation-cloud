@@ -892,3 +892,37 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
   };
   return result;
 }
+
+export async function getCloudFreshnessSignals() {
+  const client = requireCloudClient();
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const { count: sessionCount, error: sessionCountError } = await client
+    .from("dictation_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+  if (sessionCountError) throw sessionCountError;
+
+  const { data: maxDayRows, error: maxDayError } = await client
+    .from("dictation_sessions")
+    .select("day_number")
+    .eq("user_id", user.id)
+    .order("day_number", { ascending: false })
+    .limit(1);
+  if (maxDayError) throw maxDayError;
+
+  const { count: learnedCount, error: learnedError } = await client
+    .from("user_word_progress")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .not("first_learn_day", "is", null)
+    .gt("first_learn_day", 0);
+  if (learnedError) throw learnedError;
+
+  return {
+    sessionCount: Number(sessionCount || 0),
+    maxDayNumber: Number(maxDayRows?.[0]?.day_number ?? 0),
+    learnedCount: Number(learnedCount || 0)
+  };
+}

@@ -3882,6 +3882,17 @@
     }
     loadData();
     renderApp();
+
+    window.addEventListener("load", () => {
+      if (window.cloudSync?.autoSyncCloudToLocalIfNewer) {
+        window.cloudSync.autoSyncCloudToLocalIfNewer();
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && window.cloudSync?.autoSyncCloudToLocalIfNewer) {
+        window.cloudSync.autoSyncCloudToLocalIfNewer();
+      }
+    });
   </script>
 </body>
 </html>

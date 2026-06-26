@@ -2,6 +2,7 @@ import { cloudConfigurationMessage, isCloudConfigured, supabase } from "./supaba
 import {
   downloadCloudDataForLocalStorage,
   getCloudDataSummary,
+  getCloudFreshnessSignals,
   getCurrentUser,
   uploadLocalDataToCloud
 } from "./cloudRepository.js";
@@ -466,7 +467,7 @@ async function signInWithEmailPassword(elements) {
     if (error) throw error;
     elements.password.value = "";
     await refreshCloudStatus(elements);
-    setMessage(elements.message, "登录成功。当前仅显示登录状态，尚未启用自动同步。", false);
+    setMessage(elements.message, "登录成功，正在检查云端数据是否更新...", false);
   } catch (error) {
     setMessage(elements.message, "登录失败：" + (error.message || "网络错误"), true);
   } finally {
@@ -487,6 +488,99 @@ async function signOut(elements) {
     elements.logout.disabled = false;
   }
 }
+
+// ── 自动双向同步：检查云端是否比本机新 ──────────────────────────────────────────
+let _autoSyncInProgress = false;
+
+async function checkCloudFreshness() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return false;
+
+    const localData = getLocalDataSnapshot();
+    if (!localData || !Array.isArray(localData.libraries)) return false;
+
+    const libraries = localData.libraries;
+    const activeLibrary = libraries.find(lib => lib.libraryId === localData.activeLibraryId) || libraries[0];
+    if (!activeLibrary) return false;
+
+    const localRecords = Array.isArray(activeLibrary.dailyRecords) ? activeLibrary.dailyRecords : [];
+    const localSessionCount = localRecords.length;
+    const localMaxDay = localRecords.length
+      ? Math.max(...localRecords.map(r => Number(r.dayNumber || 0)))
+      : 0;
+    const localLearnedCount = (activeLibrary.words || []).filter(word => {
+      const day = Number(word.firstLearnDay);
+      return word.firstLearnDay != null && Number.isFinite(day) && day > 0;
+    }).length;
+
+    const signals = await getCloudFreshnessSignals();
+    if (!signals) return false;
+
+    if (signals.sessionCount > localSessionCount) return true;
+    if (signals.maxDayNumber > localMaxDay) return true;
+    if (signals.learnedCount > localLearnedCount) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function showSyncToast(message) {
+  let toast = document.getElementById("autoSyncToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "autoSyncToast";
+    Object.assign(toast.style, {
+      position: "fixed",
+      top: "12px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: "#eefaf5",
+      border: "1px solid #8dc7b2",
+      color: "#0d5d45",
+      padding: "8px 18px",
+      borderRadius: "8px",
+      fontSize: "14px",
+      zIndex: "9999",
+      boxShadow: "0 2px 8px rgba(0,0,0,.12)",
+      transition: "opacity .3s ease",
+      pointerEvents: "none"
+    });
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = "1";
+  clearTimeout(toast._autoSyncTimer);
+  toast._autoSyncTimer = setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+  }, 1800);
+}
+
+async function autoSyncCloudToLocalIfNewer() {
+  if (_autoSyncInProgress) return;
+  _autoSyncInProgress = true;
+  try {
+    const isFresh = await checkCloudFreshness();
+    if (!isFresh) return;
+
+    const currentLocalData = getLocalDataSnapshot();
+    const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0");
+    const validation = validateRestoredData(result.restoredData, result.cloudCounts || {});
+    if (!validation.valid) return;
+
+    replaceLocalData(result.restoredData);
+    showSyncToast("已同步最新数据");
+    setTimeout(() => window.location.reload(), 500);
+  } catch {
+    // 静默失败，不打扰用户
+  } finally {
+    _autoSyncInProgress = false;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function mount() {
   const elements = getCloudElements();
@@ -512,12 +606,15 @@ async function mount() {
   await refreshCloudStatus(elements);
 }
 
-window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData };
+window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData, autoSyncCloudToLocalIfNewer };
 
 if (supabase && !authListenerBound) {
   authListenerBound = true;
-  supabase.auth.onAuthStateChange(() => {
+  supabase.auth.onAuthStateChange((event) => {
     window.setTimeout(() => mount(), 0);
+    if (event === "SIGNED_IN") {
+      window.setTimeout(() => autoSyncCloudToLocalIfNewer(), 0);
+    }
   });
 }
 
