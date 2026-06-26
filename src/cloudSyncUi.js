@@ -1,5 +1,6 @@
 import { cloudConfigurationMessage, isCloudConfigured, supabase } from "./supabaseClient.js";
 import {
+  deleteCloudSessionBySourceLocalId,
   downloadCloudDataForLocalStorage,
   getCloudDataSummary,
   getCloudFreshnessSignals,
@@ -237,6 +238,25 @@ function requestAutoUploadLocalData(reason) {
       _doAutoUploadForDataChange(reason || "data-changed");
     }
   }, 1000);
+}
+
+// ── 撤销听写记录专用：先删云端对应 session，再上传本机最新快照 ────────────────────
+async function deleteSessionAndSync(libraryLocalId, sessionSourceLocalId) {
+  setAutoUploadStatus("记录已在本机删除，正在同步到云端...", false, false);
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      setAutoUploadStatus("记录已在本机删除。当前未登录云端，未自动同步。", false, false);
+      return;
+    }
+    await deleteCloudSessionBySourceLocalId(libraryLocalId, sessionSourceLocalId);
+    requestAutoUploadLocalData("undo-record");
+  } catch (error) {
+    setAutoUploadStatus(
+      "本机记录已删除，但云端同步失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
+      true, false
+    );
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -606,7 +626,7 @@ async function mount() {
   await refreshCloudStatus(elements);
 }
 
-window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData, autoSyncCloudToLocalIfNewer };
+window.cloudSync = { mount, autoUploadAfterDictation, requestAutoUploadLocalData, autoSyncCloudToLocalIfNewer, deleteSessionAndSync };
 
 if (supabase && !authListenerBound) {
   authListenerBound = true;

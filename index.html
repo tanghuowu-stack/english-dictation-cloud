@@ -1287,6 +1287,13 @@
       lib.updatedAt = todayDate();
       saveData();
       renderApp();
+      // 先删云端对应 session，避免自动拉取把记录重新同步回来
+      if (latest && window.cloudSync && typeof window.cloudSync.deleteSessionAndSync === "function") {
+        const sessionSourceLocalId = latest.recordId
+          ? String(latest.recordId)
+          : "day:" + String(latest.dayNumber || "unknown");
+        window.cloudSync.deleteSessionAndSync(lib.libraryId, sessionSourceLocalId);
+      }
     }
 
     function createDailyRecord(lib, task, wrongWordIds, source = "normal") {
@@ -1694,6 +1701,9 @@
       lib.updatedAt = todayDate();
       saveData();
       renderApp();
+      if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+        window.cloudSync.requestAutoUploadLocalData("pool-updated");
+      }
     }
 
     function exportLibrary(libraryId = data.activeLibraryId) {
@@ -3146,6 +3156,9 @@
           recalculateLibraryState(lib);
           alert("历史记录已更新，并已重新计算错词池、错误次数和统计。");
           renderHistoryEditTab();
+          if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+            window.cloudSync.requestAutoUploadLocalData("history-edited");
+          }
         };
       }
       const clearButton = document.getElementById("clearWrongHistoryBtn");
@@ -3158,6 +3171,9 @@
           lib.dailyRecords.forEach(item => item.wrongWordIds = []);
           recalculateLibraryState(lib);
           renderHistoryEditTab();
+          if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
+            window.cloudSync.requestAutoUploadLocalData("history-cleared");
+          }
         };
       }
     }

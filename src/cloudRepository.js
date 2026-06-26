@@ -893,6 +893,30 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
   return result;
 }
 
+export async function deleteCloudSessionBySourceLocalId(libraryLocalId, sessionSourceLocalId) {
+  const client = requireCloudClient();
+  const user = await getCurrentUser();
+  if (!user) return { deleted: false, reason: "未登录" };
+
+  const { data: libs, error: libError } = await client
+    .from("libraries")
+    .select("id")
+    .eq("owner_id", user.id)
+    .eq("source_local_id", String(libraryLocalId))
+    .limit(1);
+  if (libError) throw libError;
+  if (!libs?.length) return { deleted: false, reason: "云端没有找到对应词库" };
+
+  const { error } = await client
+    .from("dictation_sessions")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("library_id", libs[0].id)
+    .eq("source_local_id", String(sessionSourceLocalId));
+  if (error) throw error;
+  return { deleted: true };
+}
+
 export async function getCloudFreshnessSignals() {
   const client = requireCloudClient();
   const user = await getCurrentUser();
