@@ -19,15 +19,17 @@
     :root {
       --content-width: 1080px;
 
-      /* §2 色板 */
+      /* §2 色板（全绿色系，深浅区分风险等级） */
       --color-primary: #3AAFA9;
       --color-primary-dark: #2B7A78;
       --color-primary-light: #DEF2F1;
-      --color-accent: #F2994A;
-      --color-accent-dark: #D9782A;
-      --color-accent-light: #FDEBD8;
-      --color-danger: #E0644B;
-      --color-danger-light: #FBE5DF;
+      /* 今日横幅用深青绿（原橙色accent位置） */
+      --color-accent: #2B7A78;
+      --color-accent-dark: #1D5A58;
+      --color-accent-light: #DEF2F1;
+      /* 危险/高风险操作：深墨绿（比主色更深更饱和） */
+      --color-danger: #1B5E3A;
+      --color-danger-light: #D0EAD8;
       --color-success: #4CAF8E;
       --color-success-light: #E3F4ED;
       --color-bg: #FAFAF8;
@@ -56,7 +58,7 @@
       --brand-dark: #2B7A78;
       --ok: #4CAF8E;
       --warn: #C4860A;
-      --danger: #E0644B;
+      --danger: #1B5E3A;
       --soft: #DEF2F1;
       --radius: 10px;
       --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -232,7 +234,7 @@
       border-color: var(--color-danger);
     }
 
-    button.danger:hover { background: #c9503a; border-color: #c9503a; }
+    button.danger:hover { background: #134a2c; border-color: #134a2c; }
 
     /* 幽灵按钮：中性描边 */
     button.ghost {
@@ -324,7 +326,7 @@
       padding: 10px 12px;
     }
 
-    /* §5.5 状态标签配色 */
+    /* §5.5 状态标签配色（全绿色系，深浅区分风险层级） */
     .tag {
       display: inline-flex;
       align-items: center;
@@ -332,8 +334,9 @@
       padding: 3px 10px;
       border-radius: var(--radius-badge);
       border: none;
-      background: var(--color-border);
-      color: var(--color-text-secondary);
+      /* 历史错词：灰绿中性 */
+      background: #E2EDE8;
+      color: #4A6B5A;
       font-size: 12px;
       font-weight: 500;
       white-space: nowrap;
@@ -343,16 +346,16 @@
 
     /* 新词来源 */
     .tag.new { background: var(--color-primary-light); color: var(--color-primary-dark); }
-    /* 当前错词池 & 顽固 → danger-light / danger */
+    /* 当前错词池 & 顽固 → 深墨绿（高风险） */
     .tag.wrong { background: var(--color-danger-light); color: var(--color-danger); }
-    /* 重点 → highlight-light / 深黄 */
-    .tag.review { background: var(--color-highlight-light); color: #B8860B; }
+    /* 重点 → 中青绿（中等关注） */
+    .tag.review { background: var(--color-primary-light); color: var(--color-primary-dark); }
     /* 多重来源 */
     .tag.multi { background: var(--color-primary-light); color: var(--color-primary-dark); }
-    /* 未错 → success-light / success */
+    /* 未错 → 浅亮绿（正向/安全） */
     .tag.ok { background: var(--color-success-light); color: var(--color-success); }
 
-    /* §5.3 今日任务横幅：橙色色块，视觉权重最高 */
+    /* §5.3 今日任务横幅：深青绿色块，视觉权重最高 */
     .today-banner {
       background: var(--color-accent);
       border-color: var(--color-accent-dark);
@@ -390,10 +393,10 @@
     }
     .secondary-bar .stat .num { font-size: 17px; font-weight: 700; color: var(--color-text-secondary); }
 
-    /* §5.7 危险操作区块：浅红背景 + 红色顶边 + 额外间距 */
+    /* §5.7 危险操作区块：浅绿背景 + 深绿顶边 + 额外间距 */
     .danger-zone-section {
       background: var(--color-danger-light);
-      border-color: rgba(224, 100, 75, 0.25);
+      border-color: rgba(27, 94, 58, 0.2);
       border-top: 3px solid var(--color-danger);
       margin-top: 20px;
     }
@@ -407,8 +410,8 @@
     th, td {
       border-bottom: 1px solid var(--color-border);
       text-align: left;
-      padding: 9px 8px;
-      vertical-align: top;
+      padding: 8px;
+      vertical-align: middle;
     }
 
     th {
@@ -436,7 +439,25 @@
 
     .word-cell { min-width: 150px; font-weight: 700; }
     .meaning-cell { min-width: 160px; }
-    .actions-cell { min-width: 210px; }
+    .actions-cell { min-width: 200px; }
+
+    /* 表格内元素紧凑化：避免撑高行高 */
+    td button {
+      min-height: 32px;
+      padding: 4px 10px;
+      font-size: 13px;
+    }
+
+    td input[type="number"] {
+      min-height: 32px;
+      padding: 4px 8px;
+    }
+
+    /* 操作列按钮横排，不换行 */
+    .actions-cell .row {
+      flex-wrap: nowrap;
+      gap: 6px;
+    }
 
     .player {
       display: grid;
