@@ -4132,16 +4132,24 @@
 
           <section class="card span-12">
             <h3>学习计划</h3>
-            <div class="grid" style="gap:8px">
-              ${numberField("dailyTargetWords", "当天新词数", s.dailyTargetWords ?? 30, 0, 100, 5)}
-              ${numberField("dailyReviewWords", "当天到期复查数", s.dailyReviewWords ?? 30, 0, 100, 5)}
-              ${numberField("reviewDelayDays", "延迟复查天数", s.reviewDelayDays, 1, 365)}
-              <label class="span-4 checkbox-row" style="align-self:end">
-                <input data-setting="pauseNewWords" type="checkbox" ${s.pauseNewWords ? "checked" : ""}>
-                暂停新词
+            <div style="display:flex; gap:8px; flex-wrap:nowrap; align-items:end; margin-bottom:8px">
+              <label style="flex:1; min-width:0; font-size:14px">当天新词数
+                <input data-setting="dailyTargetWords" type="number" min="0" max="100" step="5" value="${escapeHtml(s.dailyTargetWords ?? 30)}">
               </label>
-              ${numberField("correctTimesToExitWrongPool", "错词写对几次移出错词池", s.correctTimesToExitWrongPool, 1, 10)}
+              <label style="flex:1; min-width:0; font-size:14px">当天到期复查数
+                <input data-setting="dailyReviewWords" type="number" min="0" max="100" step="5" value="${escapeHtml(s.dailyReviewWords ?? 30)}">
+              </label>
+              <label style="flex:1; min-width:0; font-size:14px">延迟复查天数
+                <input data-setting="reviewDelayDays" type="number" min="1" max="365" step="1" value="${escapeHtml(s.reviewDelayDays)}">
+              </label>
+              <label style="flex:1; min-width:0; font-size:14px">错词移出错词池次数
+                <input data-setting="correctTimesToExitWrongPool" type="number" min="1" max="10" step="1" value="${escapeHtml(s.correctTimesToExitWrongPool)}">
+              </label>
             </div>
+            <label class="checkbox-row" style="margin-top:2px">
+              <input data-setting="pauseNewWords" type="checkbox" ${s.pauseNewWords ? "checked" : ""}>
+              暂停新词
+            </label>
           </section>
 
           <section class="card span-12">
@@ -4158,19 +4166,19 @@
               <label class="span-4">朗读语速：<span id="settingsSpeechRateText">${Number(s.speechRate || 0.9).toFixed(1)}x</span>
                 <input data-setting="speechRate" id="settingsSpeechRate" type="range" min="0.5" max="1.5" step="0.1" value="${escapeHtml(s.speechRate || 0.9)}">
               </label>
-              <label class="span-4">朗读声音
-                <select data-setting="speechVoiceName" data-speech-voice-select>
-                  ${getSpeechVoiceOptionsHtml(s.speechVoiceName || "")}
-                </select>
-              </label>
-            </div>
-            <div class="row mobile-full" style="margin-top:14px; justify-content:flex-end">
-              <button class="ghost" id="testSpeechBtn">测试朗读</button>
-              <button id="saveSettingsBtn">保存设置</button>
+              <div class="span-8" style="display:flex; gap:8px; align-items:end">
+                <label style="flex:1; min-width:0">朗读声音
+                  <select data-setting="speechVoiceName" data-speech-voice-select>
+                    ${getSpeechVoiceOptionsHtml(s.speechVoiceName || "")}
+                  </select>
+                </label>
+                <button class="ghost" id="testSpeechBtn" style="flex-shrink:0">测试朗读</button>
+                <button id="saveSettingsBtn" style="flex-shrink:0">保存设置</button>
+              </div>
             </div>
           </section>
 
-          <section class="card span-12 collapsible-section is-open" id="cloudSyncPanel">
+          <section class="card span-12 collapsible-section" id="cloudSyncPanel">
             <button class="section-toggle" type="button">
               <div class="section-toggle-info">
                 <span class="section-toggle-title">云端同步</span>
