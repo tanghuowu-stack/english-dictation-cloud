@@ -300,8 +300,8 @@
       background: var(--color-bg);
       border: 1px solid var(--color-border);
       border-radius: var(--radius-card);
-      padding: 12px;
-      min-height: 70px;
+      padding: 10px 12px;
+      min-height: 58px;
     }
 
     .stat .num {
@@ -355,31 +355,28 @@
     /* 未错 → 浅亮绿（正向/安全） */
     .tag.ok { background: var(--color-success-light); color: var(--color-success); }
 
-    /* §5.3 今日任务横幅：深青绿色块，视觉权重最高 */
+    /* §5.3 今日任务横幅：浅色卡片，左边框 + 加粗数字体现层级 */
     .today-banner {
-      background: var(--color-accent);
-      border-color: var(--color-accent-dark);
+      background: var(--color-card-bg);
+      border-color: var(--color-border);
+      border-left: 3px solid var(--color-primary);
+      padding: 10px 16px;
     }
 
     .today-banner .stats {
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     }
 
     .today-banner .stat {
-      background: rgba(255, 255, 255, 0.2);
-      border-color: rgba(255, 255, 255, 0.25);
-      min-height: 84px;
-    }
-
-    .today-banner .stat .small,
-    .today-banner .stat .muted {
-      color: rgba(255, 255, 255, 0.85);
+      background: var(--color-bg);
+      border-color: var(--color-border);
+      min-height: 60px;
     }
 
     .today-banner .stat .num {
-      font-size: 36px;
+      font-size: 26px;
       font-weight: 800;
-      color: #fff;
+      color: var(--color-primary-dark);
     }
 
     /* §5.4 次要进度条：降一级视觉权重 */
@@ -399,6 +396,114 @@
       border-color: rgba(27, 94, 58, 0.2);
       border-top: 3px solid var(--color-danger);
       margin-top: 20px;
+    }
+
+    /* 工具页折叠区块 */
+    .collapsible-section > .section-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      background: none;
+      border: none;
+      padding: 0;
+      margin: 0;
+      min-height: auto;
+      cursor: pointer;
+      color: inherit;
+      text-align: left;
+      border-radius: 0;
+      box-shadow: none;
+      font-weight: inherit;
+    }
+
+    .collapsible-section > .section-toggle:hover,
+    .collapsible-section > .section-toggle:focus {
+      background: none;
+      border: none;
+      box-shadow: none;
+    }
+
+    .section-toggle-info {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex: 1;
+    }
+
+    .section-toggle-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--color-text-primary);
+    }
+
+    .section-toggle-desc {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+    }
+
+    .section-toggle-arrow {
+      font-size: 16px;
+      color: var(--color-text-secondary);
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+      margin-left: 14px;
+      user-select: none;
+    }
+
+    .collapsible-section.is-open > .section-toggle .section-toggle-arrow {
+      transform: rotate(180deg);
+    }
+
+    .section-body {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .collapsible-section.is-open > .section-body {
+      display: block;
+    }
+
+    .danger-zone-section .section-toggle-title {
+      color: var(--color-danger);
+    }
+
+    .info-btn {
+      min-height: auto;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--color-bg);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-bottom: 10px;
+      line-height: 1;
+    }
+
+    .info-btn:hover {
+      background: var(--color-primary-light);
+      color: var(--color-primary-dark);
+      border-color: var(--color-primary);
+    }
+
+    .info-box {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-input);
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-bottom: 12px;
+      line-height: 1.6;
     }
 
     table {
@@ -527,7 +632,7 @@
       .row.mobile-full button, .row.mobile-full select, .row.mobile-full input { flex: 1 1 100%; }
       /* 窄屏横幅：数字换行堆叠，保持可读字号 */
       .today-banner .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .today-banner .stat .num { font-size: 28px; }
+      .today-banner .stat .num { font-size: 22px; }
     }
 
     @media (min-width: 821px) and (max-width: 1100px) {
@@ -3420,77 +3525,112 @@
         <div class="grid">
           <section class="card span-12">
             <h2>工具</h2>
-            <div class="small muted">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池和备份数据。日常听写不需要使用。</div>
+            <div class="small muted">云端同步、数据备份、手动校准和危险操作，按需展开使用。日常听写一般不需要用到这里。</div>
           </section>
 
-          <section class="card span-12" id="cloudSyncPanel">
-            <h3>云端同步</h3>
-            <div class="small muted">数据变更后会自动上传；切回前台或刷新页面时会自动检查云端并同步。覆盖本机数据仍需手动操作。</div>
-            <div class="stats" style="margin-top:12px">
-              <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
-              <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
+          <section class="card span-12 collapsible-section is-open" id="cloudSyncPanel">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">云端同步</span>
+                <span class="section-toggle-desc">账号登录与同步状态</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="cloud-info" title="查看说明">？</button>
+              <div class="info-box" id="cloud-info" hidden>数据变更后会自动上传；切回前台或刷新页面时会自动检查云端并同步。覆盖本机数据仍需手动操作。</div>
+              <div class="stats">
+                <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
+                <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
+              </div>
+              <div class="row mobile-full" id="cloudLoginControls" style="margin-top:12px">
+                <label style="flex:1 1 280px">邮箱
+                  <input id="cloudEmailInput" type="email" autocomplete="email" placeholder="请输入邮箱">
+                </label>
+                <label style="flex:1 1 280px">密码
+                  <input id="cloudPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码">
+                </label>
+                <button id="cloudLoginBtn" type="button">登录</button>
+                <button class="secondary" id="cloudLogoutBtn" type="button" hidden>退出登录</button>
+              </div>
+              <div class="small muted" id="cloudSyncMessage" style="margin-top:10px" aria-live="polite"></div>
+              <div class="row mobile-full" style="margin-top:12px">
+                <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
+                <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
+                <button class="secondary" id="cloudDiagnoseBtn" type="button" disabled>诊断本机与云端数据</button>
+                <button class="danger" id="cloudDownloadBtn" type="button" disabled>从云端下载到本机</button>
+              </div>
+              <div class="small muted" style="margin-top:8px">用于在新设备或空浏览器中恢复云端数据。会覆盖当前设备的本地数据，请先备份。</div>
+              <div class="stats" id="cloudDataSummary" style="margin-top:12px" hidden>
+                <div class="stat"><div class="small muted">云端词库</div><div class="num" id="cloudLibraryCount">0</div></div>
+                <div class="stat"><div class="small muted">云端单词</div><div class="num" id="cloudWordCount">0</div></div>
+                <div class="stat"><div class="small muted">云端听写记录</div><div class="num" id="cloudSessionCount">0</div></div>
+                <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
+              </div>
+              <div class="notice small" id="cloudDiagnosticOutput" style="margin-top:12px; white-space:pre-wrap" hidden></div>
+              <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
+              <button class="secondary" id="cloudReloadBtn" type="button" style="margin-top:10px" hidden>刷新页面并使用恢复的数据</button>
             </div>
-            <div class="row mobile-full" id="cloudLoginControls" style="margin-top:12px">
-              <label style="flex:1 1 280px">邮箱
-                <input id="cloudEmailInput" type="email" autocomplete="email" placeholder="请输入邮箱">
-              </label>
-              <label style="flex:1 1 280px">密码
-                <input id="cloudPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码">
-              </label>
-              <button id="cloudLoginBtn" type="button">登录</button>
-              <button class="secondary" id="cloudLogoutBtn" type="button" hidden>退出登录</button>
-            </div>
-            <div class="small muted" id="cloudSyncMessage" style="margin-top:10px" aria-live="polite"></div>
-            <div class="row mobile-full" style="margin-top:12px">
-              <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
-              <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
-              <button class="secondary" id="cloudDiagnoseBtn" type="button" disabled>诊断本机与云端数据</button>
-              <button class="danger" id="cloudDownloadBtn" type="button" disabled>从云端下载到本机</button>
-            </div>
-            <div class="small muted" style="margin-top:8px">用于在新设备或空浏览器中恢复云端数据。会覆盖当前设备的本地数据，请先备份。</div>
-            <div class="stats" id="cloudDataSummary" style="margin-top:12px" hidden>
-              <div class="stat"><div class="small muted">云端词库</div><div class="num" id="cloudLibraryCount">0</div></div>
-              <div class="stat"><div class="small muted">云端单词</div><div class="num" id="cloudWordCount">0</div></div>
-              <div class="stat"><div class="small muted">云端听写记录</div><div class="num" id="cloudSessionCount">0</div></div>
-              <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
-            </div>
-            <div class="notice small" id="cloudDiagnosticOutput" style="margin-top:12px; white-space:pre-wrap" hidden></div>
-            <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
-            <button class="secondary" id="cloudReloadBtn" type="button" style="margin-top:10px" hidden>刷新页面并使用恢复的数据</button>
           </section>
 
-          <section class="card span-12">
-            <h3>数据备份</h3>
-            <div class="notice small">导入会覆盖数据，操作前建议先导出全部数据备份。</div>
-            <div class="row mobile-full" style="margin-top:12px">
-              <button id="statsDownloadLibraryBtn">导出当前词库</button>
-              <button class="danger" id="statsImportReplaceLibraryBtn">导入并覆盖当前词库</button>
-              <button class="secondary" id="statsImportNewLibraryBtn">导入为新词库</button>
-              <button id="statsDownloadAllBtn">导出全部数据</button>
-              <button class="danger" id="statsImportAllBtn">导入并覆盖全部数据</button>
+          <section class="card span-12 collapsible-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">数据备份</span>
+                <span class="section-toggle-desc">导出与导入词库及全部数据</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="backup-info" title="查看说明">？</button>
+              <div class="info-box" id="backup-info" hidden>导入会覆盖数据，操作前建议先导出全部数据备份。</div>
+              <div class="row mobile-full">
+                <button id="statsDownloadLibraryBtn">导出当前词库</button>
+                <button class="danger" id="statsImportReplaceLibraryBtn">导入并覆盖当前词库</button>
+                <button class="secondary" id="statsImportNewLibraryBtn">导入为新词库</button>
+                <button id="statsDownloadAllBtn">导出全部数据</button>
+                <button class="danger" id="statsImportAllBtn">导入并覆盖全部数据</button>
+              </div>
+              <input id="statsLibraryImportFile" type="file" accept="application/json,.json" style="display:none">
+              <input id="statsAllImportFile" type="file" accept="application/json,.json" style="display:none">
             </div>
-            <input id="statsLibraryImportFile" type="file" accept="application/json,.json" style="display:none">
-            <input id="statsAllImportFile" type="file" accept="application/json,.json" style="display:none">
           </section>
 
-          <section class="card span-12">
-            <h3>手动校准</h3>
-            <div class="notice small">这里用于补录已经在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
-            <div class="tabs" style="margin-top:12px">
-              <button class="secondary" data-manual-tab="batch">连续按天补录</button>
-              <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
-              <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
-              <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
-              <button class="secondary" data-manual-tab="history">历史记录修改</button>
+          <section class="card span-12 collapsible-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">手动校准</span>
+                <span class="section-toggle-desc">补录历史记录、维护错词池</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="manual-info" title="查看说明">？</button>
+              <div class="info-box" id="manual-info" hidden>适用于补录已在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
+              <div class="tabs">
+                <button class="secondary" data-manual-tab="batch">连续按天补录</button>
+                <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
+                <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
+                <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
+                <button class="secondary" data-manual-tab="history">历史记录修改</button>
+              </div>
+              <div id="manualContent" style="margin-top:12px"></div>
             </div>
-            <div id="manualContent" style="margin-top:12px"></div>
           </section>
 
-          <section class="card span-12 danger-zone-section">
-            <h3 style="color:var(--danger)">危险操作</h3>
-            <div class="notice small">这些操作会改变学习记录。操作前建议先导出全部数据备份。</div>
-            <div class="row mobile-full" style="margin-top:12px">
-              <button class="danger" id="undoLatestRecordBtn">撤销最近一次完成记录</button>
+          <section class="card span-12 collapsible-section danger-zone-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">⚠ 危险操作</span>
+                <span class="section-toggle-desc">不可逆的记录修改，操作前请先备份数据</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <div class="notice small">这些操作会改变学习记录。操作前建议先导出全部数据备份。</div>
+              <div class="row mobile-full" style="margin-top:12px">
+                <button class="danger" id="undoLatestRecordBtn">撤销最近一次完成记录</button>
+              </div>
             </div>
           </section>
         </div>
@@ -3500,9 +3640,23 @@
       });
       renderManualTab("batch");
       bindStatisticsBackupEvents(lib);
+      setupToolsSections();
       if (window.cloudSync && typeof window.cloudSync.mount === "function") {
         window.cloudSync.mount();
       }
+    }
+
+    function setupToolsSections() {
+      document.querySelectorAll(".collapsible-section > .section-toggle").forEach(btn => {
+        btn.onclick = () => btn.closest(".collapsible-section").classList.toggle("is-open");
+      });
+      document.querySelectorAll("[data-info-target]").forEach(btn => {
+        btn.onclick = e => {
+          e.stopPropagation();
+          const box = document.getElementById(btn.dataset.infoTarget);
+          if (box) box.hidden = !box.hidden;
+        };
+      });
     }
 
     function countIntersection(idsA, idsB) {
