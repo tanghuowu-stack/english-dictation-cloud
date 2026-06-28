@@ -3982,7 +3982,7 @@
     function setupDictationPaperSheet(sheet, title, rowsPerColumn, dateStr) {
       const widths = [5.2, 13, 26, 17.5, 5.2, 13, 26, 17.5];
       const dataRowHeight = getDictationDataRowHeight(rowsPerColumn);
-      const finalRow = 4 + rowsPerColumn;
+      const finalRow = 3 + rowsPerColumn;
       sheet.columns = widths.map(width => ({ width }));
       sheet.pageSetup = {
         paperSize: 9,
@@ -4003,36 +4003,28 @@
         }
       };
       sheet.mergeCells("A1:H1");
-      if (dateStr) {
-        sheet.getCell("A1").value = {
-          richText: [
-            { text: title, font: { name: "SimSun", size: 20, bold: true } },
-            { text: "\n" + dateStr, font: { name: "SimSun", size: 13, bold: false } }
-          ]
-        };
-        sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-        sheet.getRow(1).height = 42;
-      } else {
-        sheet.getCell("A1").value = title;
-        sheet.getCell("A1").font = { name: "SimSun", size: 20, bold: true };
-        sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
-        sheet.getRow(1).height = 25;
-      }
-      sheet.getRow(2).height = 10;
-      sheet.getRow(3).height = 6;
-      sheet.getRow(4).height = rowsPerColumn >= 30 ? 34 : 38;
+      sheet.getCell("A1").value = title;
+      sheet.getCell("A1").font = { name: "SimSun", size: 20, bold: true };
+      sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+      sheet.getRow(1).height = 28;
+      sheet.mergeCells("A2:H2");
+      sheet.getCell("A2").value = dateStr || "";
+      sheet.getCell("A2").font = { name: "SimSun", size: 13 };
+      sheet.getCell("A2").alignment = { horizontal: "center", vertical: "middle" };
+      sheet.getRow(2).height = 18;
+      sheet.getRow(3).height = rowsPerColumn >= 30 ? 34 : 38;
 
       const headers = ["原序号", "中文", "英文", "订错", "原序号", "中文", "英文", "订错"];
       headers.forEach((value, index) => {
-        sheet.getCell(4, index + 1).value = value;
+        sheet.getCell(3, index + 1).value = value;
       });
       for (let col = 1; col <= 8; col += 1) {
-        const cell = sheet.getCell(4, col);
+        const cell = sheet.getCell(3, col);
         cell.font = { name: "SimSun", size: col === 1 || col === 5 ? 10 : 11, bold: true };
         cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
         cell.border = excelThinBorder();
       }
-      for (let rowIndex = 5; rowIndex <= finalRow; rowIndex += 1) {
+      for (let rowIndex = 4; rowIndex <= finalRow; rowIndex += 1) {
         sheet.getRow(rowIndex).height = dataRowHeight;
         for (let col = 1; col <= 8; col += 1) {
           const cell = sheet.getCell(rowIndex, col);
@@ -4095,7 +4087,7 @@
       ids.forEach((id, index) => {
         const word = getWordById(lib, id);
         const isRightColumn = index >= rowsPerColumn;
-        const rowIndex = 5 + (isRightColumn ? index - rowsPerColumn : index);
+        const rowIndex = 4 + (isRightColumn ? index - rowsPerColumn : index);
         const startCol = isRightColumn ? 5 : 1;
         fillDictationPaperWord(sheet, rowIndex, startCol, word, rowsPerColumn);
       });
