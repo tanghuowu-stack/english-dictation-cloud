@@ -3979,7 +3979,7 @@
       return 9;
     }
 
-    function setupDictationPaperSheet(sheet, title, rowsPerColumn) {
+    function setupDictationPaperSheet(sheet, title, rowsPerColumn, dateStr) {
       const widths = [5.2, 13, 26, 17.5, 5.2, 13, 26, 17.5];
       const dataRowHeight = getDictationDataRowHeight(rowsPerColumn);
       const finalRow = 4 + rowsPerColumn;
@@ -4003,10 +4003,21 @@
         }
       };
       sheet.mergeCells("A1:H1");
-      sheet.getCell("A1").value = title;
-      sheet.getCell("A1").font = { name: "SimSun", size: 20, bold: true };
-      sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
-      sheet.getRow(1).height = 25;
+      if (dateStr) {
+        sheet.getCell("A1").value = {
+          richText: [
+            { text: title, font: { name: "SimSun", size: 20, bold: true } },
+            { text: "\n" + dateStr, font: { name: "SimSun", size: 13, bold: false } }
+          ]
+        };
+        sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        sheet.getRow(1).height = 42;
+      } else {
+        sheet.getCell("A1").value = title;
+        sheet.getCell("A1").font = { name: "SimSun", size: 20, bold: true };
+        sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+        sheet.getRow(1).height = 25;
+      }
       sheet.getRow(2).height = 10;
       sheet.getRow(3).height = 6;
       sheet.getRow(4).height = rowsPerColumn >= 30 ? 34 : 38;
@@ -4078,9 +4089,9 @@
         return;
       }
       const rowsPerColumn = Math.ceil(ids.length / 2);
-      const title = "错词练习（FCE 听力词汇）";
+      const title = "今日听写（" + (lib.libraryName || "词库") + "）";
       const sheet = workbook.addWorksheet(safeSheetName("听写纸"));
-      setupDictationPaperSheet(sheet, title, rowsPerColumn);
+      setupDictationPaperSheet(sheet, title, rowsPerColumn, exportDate);
       ids.forEach((id, index) => {
         const word = getWordById(lib, id);
         const isRightColumn = index >= rowsPerColumn;
