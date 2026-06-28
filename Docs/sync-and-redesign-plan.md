@@ -301,3 +301,183 @@ style.md 视觉规范，对整个网站进行配色和样式的统一改版。
 | 阶段4 | 视觉美化（需要 style.md） | 紧接阶段3之后 |
 
 每个阶段独立开窗口执行，把对应章节的"给 Claude Code 的完整提示词"整段复制粘贴即可，不需要再重复背景说明，因为提示词里已经包含了必要上下文。
+
+---
+
+## 实施日志（实际执行记录，持续更新）
+
+> 以下记录的是真实发生的执行过程，和上面的"计划"部分不完全一致——
+> 实际执行中发现了计划之外的问题，临时调整了顺序、追加了任务。
+> 新开窗口前建议先看这一节，了解目前真实进度，避免重复劳动或遗漏。
+
+### 实际执行顺序（与原计划的差异）
+
+```
+窗口1：阶段1 基础同步逻辑           ✅ 完成
+窗口3：阶段3 信息结构梳理            ✅ 完成（提前于同步补强之前做了）
+窗口4：同步补强（比原计划"阶段2"范围更大）  ✅ 完成
+窗口5（计划外）：PWA 主屏幕图标       🔲 待执行
+窗口6：阶段4 视觉美化                🔲 待执行
+```
+
+**说明**：原计划是"阶段1 → 观察2-3天 → 阶段2 → 阶段3 → 阶段4"，实际是边用边发现问题，阶段2（同步补强）是在窗口3做完界面结构之后，因为真实使用中发现 bug 才补的，而且补强的内容比最初设想的"删除词库/单词没同步删除"这类场景更深入，挖到了一个时间戳精度的根因问题。
+
+---
+
+### 窗口1：阶段1 基础同步逻辑 —— 完成情况
+
+按计划 1.7 的提示词执行，新增：
+
+- `src/cloudRepository.js`：新增 `getCloudFreshnessSignals()`
+- `src/cloudSyncUi.js`：新增 `checkCloudFreshness()`、`showSyncToast()`、`autoSyncCloudToLocalIfNewer()`，暴露到 `window.cloudSync`；`onAuthStateChange` 收到 `SIGNED_IN` 时触发一次同步
+- `index.html`：`renderApp()` 后新增 `load` 和 `visibilitychange` 监听
+
+**验收结果**：Mac 完成听写 → iPad 刷新可以看到最新数据。基础同步方向验证通过。
+
+---
+
+### 窗口3：阶段3 信息结构梳理 —— 完成情况
+
+按计划 3.3 的提示词执行，调整了：
+
+- 今日听写页：今日任务横幅 + 长期进度次要信息条分离
+- 错词本页：默认筛选改为"当前错词池"优先
+- 工具页：区块顺序改为"云端同步 → 数据备份 → 手动校准 → 危险操作"
+
+**验收结果**：本地 `npm run build` 通过，页面布局符合预期，已 commit 推送。
+
+---
+
+### 窗口4：同步补强 —— 发现的问题和修复（重点记录，以后排查同步问题先看这里）
+
+这是实际执行中信息量最大的一轮，分三轮排查 + 修复：
+
+#### 问题 A：撤销听写记录后，被自动同步"复活"
+
+**现象**：在工具页点"撤销最近一次完成记录"，本机记录删了，但过一会儿（或切设备）又出现了。
+
+**根因**：
+1. "撤销"这个操作本身没有触发上传，云端那条记录一直还在
+2. 就算补了上传调用，`uploadLocalDataToCloud` 内部有个防护逻辑：如果云端 session 数量比本机多，会判定"本机数据更旧"直接阻断上传，导致删了也传不上去
+
+**修复**：
+- `cloudRepository.js` 新增 `deleteCloudSessionBySourceLocalId()`，直接删云端对应的 session 行
+- `cloudSyncUi.js` 新增 `deleteSessionAndSync()`：**先删云端 session，再触发上传**（顺序很关键，必须先删后传，否则又会被"云端更多"的防护挡住）
+- `index.html` 里 `undoLatestDailyRecord()` 改为调用 `deleteSessionAndSync()`
+- 同时发现另外三处"危险操作"也漏了上传触发：历史记录修改的"保存修改并重算"、"清空错词记录并重算"、`manualUpdateWrongPool()`（手动维护错词池），全部补上 `requestAutoUploadLocalData()`
+
+#### 问题 B：iPad 撤销后，Mac 刷新看不到变化（即使强制刷新）
+
+**现象**：iPad 操作完云端已经同步了，但 Mac 强制刷新页面，数据依旧是旧的；直到 iPad 重新打开页面才看到效果，Mac 这边却一直不行。
+
+**根因**（这是个隐藏比较深的 bug）：
+- `checkCloudFreshness` 原本判断"云端是否更新"的逻辑，全部是**数量大小比较**（云端 session 数 > 本机、云端 maxDay > 本机、云端已学词数 > 本机）
+- 但"撤销"这种操作的本质是让数据**变少**，云端和本机的 session 数量相等或本机数量不比云端少时，三个判断条件全部为 false，自动同步逻辑判定"本机不落后"，什么都不做
+- 进一步排查发现一个更底层的问题：数据库 `libraries.updated_at` 本来就存了完整时间戳，但本机存的时候被 `datePart()` 函数截断成只有"年-月-日"，同一天内多次操作的时间戳完全没法区分先后
+
+**修复方案（时间戳判断，新增第四个判断条件，与原有三个数量判断是"或"关系，不是替换）**：
+- `cloudRepository.js`：`getCloudFreshnessSignals()` 新增 `maxLibraryUpdatedAt` 信号；`downloadCloudDataForLocalStorage()` 去掉 `datePart()` 截断，保留完整 ISO 时间戳
+- `cloudSyncUi.js`：`checkCloudFreshness()` 新增第四个判断 `maxLibraryUpdatedAt > localMaxUpdatedAt`；三个上传路径（`autoUploadAfterDictation`、`_doAutoUploadForDataChange`、`deleteSessionAndSync`）上传成功后，调用新增的 `window.updateLocalLibraryUpdatedAt()` 把本机时间戳对齐到刚上传的时刻（这一步不做的话，本机的旧时间戳会让下次自己检查时又被误判）
+- `index.html`：所有 `lib.updatedAt = todayDate()`（约12处）改成 `new Date().toISOString()`，精度从"天"提到毫秒；新增 `window.updateLocalLibraryUpdatedAt()` 全局函数
+
+**验证后发现的衍生问题**：改完之后第一次测试"还要刷新好几次才生效"，排查发现是**浏览器缓存**导致的（不是代码bug）——用 `Cmd+Shift+R` 强制刷新后一次就生效。说明日常使用中如果用户用普通刷新，可能会因为浏览器缓存看到旧版本前端代码本身（不是数据旧，是代码旧），这是部署层面的问题，**目前还没有专门处理**，如果以后又出现"逻辑明明改了但页面表现像没改"的情况，先怀疑缓存，用强制刷新排除这个因素再排查代码。
+
+#### 问题 C：长时间停留同一页面不操作，不会自动同步
+
+**现象**：用户指出如果打开页面后既不刷新、也不切标签页，那三个原有触发时机（load/visibilitychange/登录后）都不会命中，容易忘记手动刷新导致看到旧数据。
+
+**修复**：新增两个触发点
+- `cloudSyncUi.js` 新增 `startPeriodicSync()` / `stopPeriodicSync()`：前台时每3分钟自动检查一次，切到后台时停止计时器（避免后台标签页持续发请求浪费资源），切回前台重启计时器
+- `index.html` 的 `renderNav()` 导航点击逻辑里，切换到"今日听写" tab 时也触发一次同步检查
+- 防重入：所有路径最终都走 `autoSyncCloudToLocalIfNewer()`，函数首行 `if (_autoSyncInProgress) return` 保证多个触发同时命中也不会重复请求
+
+#### 同时修复的文案问题
+
+发现两处工具页文案已经过时（还在说"听写完成后才自动上传""下载和覆盖仍需手动操作"），已更新为准确描述当前行为：
+- `cloudSyncUi.js:93`
+- `index.html:3289` 附近（工具页云端同步区域说明）
+
+#### 当前完整的触发时机列表（窗口4 结束后的最终状态）
+
+| 时机 | 行为 |
+|---|---|
+| 页面 `load` | 同步一次 + 启动3分钟定时器 |
+| `visibilitychange` → 可见 | 同步一次 + 重启定时器 |
+| `visibilitychange` → 隐藏 | 停止定时器 |
+| 定时器每3分钟（仅前台） | 同步一次 |
+| 切换到"今日听写" tab | 同步一次 |
+| 登录成功 | 同步一次 |
+
+#### 判断"云端是否更新"的最终逻辑（四个条件，命中任一即同步）
+
+```
+1. 云端 dictation_sessions 数量 > 本机 dailyRecords 数量
+2. 云端最大 day_number > 本机 currentDay
+3. 云端 first_learn_day 有效数量 > 本机已学词数
+4. 云端 libraries.updated_at（完整ISO时间戳）> 本机 lib.updatedAt
+```
+
+前三条捕捉"新增"类变化（新词、新听写记录），第四条捕捉"删除/修改"类变化（撤销、错词池调整等数量不增加甚至减少的操作）。两类互补，缺一都会漏判某些场景。
+
+---
+
+### 待执行：PWA 主屏幕图标（计划外新增任务）
+
+用户希望把网站添加到 iPad 主屏幕，点击图标后全屏打开（像独立 App 一样，不显示 Safari 地址栏）。已设计好图标文件（1254×1254 px 正方形）。
+
+**给 Claude Code 的提示词**：
+
+```
+我想把这个网站做成可以"添加到 iPad 主屏幕"的效果（PWA），
+让它在 iPad 桌面上显示成一个图标，点击后像 App 一样全屏打开
+（不显示浏览器地址栏）。
+
+我已经把设计好的图标文件放在 public/icons/app-icon.png
+（原图 1254x1254 像素，正方形）。
+
+请帮我：
+
+1. 根据这张原图，生成 iOS / iPad 需要的几个尺寸的图标
+   （比如 180x180、152x152、167x167，以及一个 512x512 用于
+   manifest），放在 public/icons/ 目录下
+
+2. 在 index.html 的 <head> 里添加必要的 meta 标签和 link 标签，
+   让 iPad Safari 在"添加到主屏幕"时使用这个图标，并且打开后
+   是全屏模式（隐藏 Safari 的地址栏和工具栏），包括：
+   - apple-touch-icon 相关 link 标签
+   - apple-mobile-web-app-capable
+   - apple-mobile-web-app-status-bar-style
+   - apple-mobile-web-app-title（网站标题，用于主屏幕图标下方显示的名字，
+     帮我设成"英语听写"）
+
+3. 如果你觉得顺便加一个标准的 manifest.json（PWA 标准做法，
+   对安卓和未来扩展也有好处）成本不高，可以一起加，但这不是必须的，
+   主要目标是 iPad 主屏幕图标能正常显示和全屏打开
+
+4. 不要修改任何业务逻辑、同步逻辑、听写功能相关代码，
+   这次只改 index.html 的 head 部分和新增图标文件
+
+改完后告诉我，并且告诉我用户（也就是我）添加到主屏幕的具体操作步骤
+（在 iPad Safari 上具体怎么点）。
+```
+
+**执行前准备**：把图标文件放到 `/Users/gulao/Documents/英语听写系统/public/icons/app-icon.png`。
+
+**注意**：这个任务和同步逻辑完全无关，可以独立开窗口执行，不需要带上窗口4 的 context。
+
+---
+
+### 待执行：阶段4 视觉美化
+
+原计划内容不变（见上面"阶段4"章节），执行前需要把 `style.md` 一起提供给 Claude Code。
+
+**补充提醒**：窗口4 修复时更新过两处工具页文案（云端同步区域的说明文字），阶段4 美化工具页时注意保留这些文案内容，只调整样式不要把文案改回旧版本。
+
+---
+
+### 通用排错经验（以后遇到类似情况可以先检查这几点）
+
+1. **怀疑"代码没生效"时，先用 `Cmd+Shift+R` 强制刷新排除浏览器缓存因素**，再去怀疑代码逻辑本身有问题
+2. **涉及"删除/减少"类操作的同步判断，不能只用数量比较，要有时间戳兜底**——这是这次踩坑的核心教训
+3. **本地 `npm run dev` 无法测试登录态相关功能**（Supabase 在 localhost 环境下登录可能受限），涉及登录后行为的改动，验证流程是：本地 `npm run build` 确认无报错 → 直接 push 部署到 Vercel → 用真实账号在正式环境验证
+4. 每次推送后用 `git status` 确认改动范围在预期内（避免误提交 `node_modules`、`dist` 等），用 `git remote -v` 确认远程仓库已正确配置（之前遇到过 push 失败是因为没配 remote）

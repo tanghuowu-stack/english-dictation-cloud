@@ -141,6 +141,7 @@ function validateLocalDataForAutoUpload(localData) {
 }
 
 async function autoUploadAfterDictation() {
+  _autoUploadInProgress = true;
   setAutoUploadStatus("本次听写已保存到本机，正在自动上传云端...", false, false);
   try {
     const user = await getCurrentUser();
@@ -178,6 +179,8 @@ async function autoUploadAfterDictation() {
       true,
       false
     );
+  } finally {
+    _autoUploadInProgress = false;
   }
 }
 
@@ -185,6 +188,7 @@ async function autoUploadAfterDictation() {
 let _autoUploadTimer = null;
 
 async function _doAutoUploadForDataChange(reason) {
+  _autoUploadInProgress = true;
   const prefix = "词库变更已保存到本机";
   setAutoUploadStatus(prefix + "，正在自动上传云端...", false, false);
   try {
@@ -228,6 +232,8 @@ async function _doAutoUploadForDataChange(reason) {
       prefix + "，但自动上传云端失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
       true, false
     );
+  } finally {
+    _autoUploadInProgress = false;
   }
 }
 
@@ -517,6 +523,8 @@ async function signOut(elements) {
 
 // ── 自动双向同步：检查云端是否比本机新 ──────────────────────────────────────────
 let _autoSyncInProgress = false;
+// 上传期间屏蔽拉取，防止读到云端中间状态（库行已更新但 user_word_progress 还未写入）
+let _autoUploadInProgress = false;
 
 async function checkCloudFreshness() {
   try {
@@ -547,13 +555,15 @@ async function checkCloudFreshness() {
     if (signals.maxDayNumber > localMaxDay) return true;
     if (signals.learnedCount > localLearnedCount) return true;
 
-    // 第四个信号：时间戳比较，用于捕获"删除/撤销"等让数量减少的操作
-    if (signals.maxLibraryUpdatedAt) {
+    // 第四个信号：用 user_word_progress.updated_at 捕获"删除/撤销"等让数量减少的操作。
+    // 该字段在 uploadLocalDataToCloud 最后一步（Step5）才写入，不会在上传中途触发误判。
+    // 本机对比基准用 lib.updatedAt，它在 updateLocalLibraryUpdatedAt() 里与 Step5 同步更新。
+    if (signals.maxProgressUpdatedAt) {
       const localMaxUpdatedAt = libraries.reduce((max, lib) => {
         const ts = lib.updatedAt || "";
         return ts > max ? ts : max;
       }, "");
-      if (localMaxUpdatedAt && signals.maxLibraryUpdatedAt > localMaxUpdatedAt) return true;
+      if (localMaxUpdatedAt && signals.maxProgressUpdatedAt > localMaxUpdatedAt) return true;
     }
 
     return false;
@@ -596,6 +606,7 @@ function showSyncToast(message) {
 
 async function autoSyncCloudToLocalIfNewer() {
   if (_autoSyncInProgress) return;
+  if (_autoUploadInProgress) return;
   _autoSyncInProgress = true;
   try {
     const isFresh = await checkCloudFreshness();

@@ -944,18 +944,21 @@ export async function getCloudFreshnessSignals() {
     .gt("first_learn_day", 0);
   if (learnedError) throw learnedError;
 
-  const { data: maxUpdatedRows, error: maxUpdatedError } = await client
-    .from("libraries")
+  // 用 user_word_progress.updated_at 而非 libraries.updated_at：
+  // libraries 在上传 Step1 就被写入，而 user_word_progress 是上传最后一步（Step5），
+  // 用后者可以避免"Step1写入→freshness命中→拉取→读到还没写完的进度"的竞态。
+  const { data: maxProgressRows, error: maxProgressError } = await client
+    .from("user_word_progress")
     .select("updated_at")
-    .eq("owner_id", user.id)
+    .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .limit(1);
-  if (maxUpdatedError) throw maxUpdatedError;
+  if (maxProgressError) throw maxProgressError;
 
   return {
     sessionCount: Number(sessionCount || 0),
     maxDayNumber: Number(maxDayRows?.[0]?.day_number ?? 0),
     learnedCount: Number(learnedCount || 0),
-    maxLibraryUpdatedAt: maxUpdatedRows?.[0]?.updated_at || null
+    maxProgressUpdatedAt: maxProgressRows?.[0]?.updated_at || null
   };
 }
