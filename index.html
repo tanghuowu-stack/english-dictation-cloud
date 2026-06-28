@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>家庭英语单词听写</title>
+  <title>Capybara 英语听写</title>
 
   <!-- PWA / iPad 主屏幕 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -620,6 +620,92 @@
     .ok-text { color: var(--color-success); }
     .warn-text { color: var(--warn); }
 
+    /* 顶部 logo + 标题行 */
+    .site-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .site-logo {
+      height: 36px;
+      width: 36px;
+      object-fit: contain;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+
+    /* 今日信息合并卡：左边主要，右边次要 */
+    .today-combined-bar {
+      border-left: 3px solid var(--color-primary);
+      padding: 10px 16px;
+    }
+    .today-combined-inner {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .today-primary-stats {
+      flex: 1;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .today-primary-stats .stat {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-card);
+      padding: 8px 10px;
+      min-height: 52px;
+    }
+    .today-primary-stats .stat .num {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--color-primary-dark);
+    }
+    .today-divider {
+      width: 1px;
+      background: var(--color-border);
+      flex-shrink: 0;
+    }
+    .today-secondary-stats {
+      flex: 1;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      align-content: start;
+    }
+    .today-secondary-stats .stat {
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-card);
+      padding: 8px 8px;
+      min-height: 48px;
+    }
+    .today-secondary-stats .stat .num {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--color-text-secondary);
+    }
+
+    /* 进度区域容器：让"进入标记错误"按钮定位到右上角 */
+    .player-progress-area {
+      position: relative;
+      width: 100%;
+      text-align: center;
+    }
+    .player-go-mark-btn {
+      position: absolute;
+      top: 6px;
+      right: 20px;
+      font-size: 14px;
+      padding: 8px 18px;
+      min-height: 42px;
+    }
+
+    input[type="range"] { accent-color: var(--color-primary); }
+
     /* §6 移动端适配 */
     @media (max-width: 820px) {
       .topbar { grid-template-columns: 1fr; }
@@ -633,6 +719,14 @@
       /* 窄屏横幅：数字换行堆叠，保持可读字号 */
       .today-banner .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .today-banner .stat .num { font-size: 22px; }
+      /* 窄屏合并信息区：竖向堆叠 */
+      .today-combined-inner { flex-direction: column; gap: 8px; }
+      .today-divider { width: 100%; height: 1px; }
+      .today-primary-stats { grid-template-columns: repeat(2, 1fr); }
+      .today-primary-stats .stat .num { font-size: 18px; }
+      .today-secondary-stats { grid-template-columns: repeat(3, 1fr); }
+      /* 进度右上角按钮在窄屏下缩小一点 */
+      .player-go-mark-btn { font-size: 12px; padding: 5px 10px; min-height: 32px; }
     }
 
     @media (min-width: 821px) and (max-width: 1100px) {
@@ -649,9 +743,9 @@
 <body>
   <header>
     <div class="topbar">
-      <div>
-        <h1>家庭英语单词听写</h1>
-        <div class="small muted">长期可复用，多词库，本地保存</div>
+      <div class="site-title-row">
+        <img src="/icons/app-icon.png" class="site-logo" alt="Capybara">
+        <h1>Capybara 英语听写</h1>
       </div>
       <div class="library-switcher">
         <span class="small muted">当前词库</span>
@@ -1429,7 +1523,7 @@
       const selectedPresetId = getVoicePresetById(selectedName) ? selectedName : "google-us";
       return RECOMMENDED_VOICE_PRESETS.map(preset => {
         const matchedVoice = findVoiceForPreset(preset, voices);
-        const status = matchedVoice ? "（可用）" : "（自动兜底）";
+        const status = matchedVoice ? "" : "（自动兜底）";
         return '<option value="' + escapeHtml(preset.id) + '"' + (preset.id === selectedPresetId ? " selected" : "") + '>' + escapeHtml(preset.label + status) + '</option>';
       }).join("");
     }
@@ -2086,40 +2180,42 @@
       const app = document.getElementById("app");
       app.innerHTML = `
         <div class="grid">
-          <section class="card span-12">
-            <div class="row between">
-              <div>
-                <h2>词库</h2>
-                <div class="small muted">每个词库独立保存单词、计划、进度、错词和播放设置。</div>
+          <section class="card span-12 collapsible-section" id="libraryManagePanel">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">词库管理</span>
+                <span class="section-toggle-desc">新建、重命名、删除词库，导入单词</span>
               </div>
-              <button id="newLibraryBtn">新建词库</button>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <div class="row" style="margin-bottom:16px">
+                <button id="newLibraryBtn">新建词库</button>
+              </div>
+              <div class="row between" style="margin-bottom:14px">
+                <h3 style="margin:0">当前词库</h3>
+                <div class="row mobile-full" style="flex:1; justify-content:flex-end">
+                  <label style="min-width:260px; max-width:420px">词库名称
+                    <input id="libraryNameInput" value="${escapeHtml(lib.libraryName)}">
+                  </label>
+                  <button id="renameLibraryBtn">保存名称</button>
+                  <button class="danger" id="deleteLibraryBtn">删除词库</button>
+                </div>
+              </div>
+              <h3 style="margin:0 0 8px">导入单词</h3>
+              <div class="stack">
+                <div class="notice small">每行一个：英文 中文释义。系统会从第一个中文字符开始切分，中文前面的内容会完整作为英文或英文词组。只有英文也可以导入，中文释义会留空。</div>
+                <textarea id="wordImportText" placeholder="achievement 成就&#10;travel writer 旅行作家&#10;research assistant 研究员&#10;storage 储存"></textarea>
+                <div class="row mobile-full">
+                  <button id="appendWordsBtn">追加到词库</button>
+                  <button class="danger" id="replaceWordsBtn">清空并重建词库</button>
+                </div>
+              </div>
             </div>
           </section>
 
           <section class="card span-12">
-            <div class="row between">
-              <h3>当前词库</h3>
-              <div class="row mobile-full" style="flex:1; justify-content:flex-end">
-                <label style="min-width:260px; max-width:420px">词库名称
-                  <input id="libraryNameInput" value="${escapeHtml(lib.libraryName)}">
-                </label>
-                <button id="renameLibraryBtn">保存名称</button>
-                <button class="danger" id="deleteLibraryBtn">删除词库</button>
-              </div>
-            </div>
-            <div class="stats" style="margin-top:12px">${renderStats(lib)}</div>
-          </section>
-
-          <section class="card span-12">
-            <h3>导入单词</h3>
-            <div class="stack">
-              <div class="notice small">每行一个：英文 中文释义。系统会从第一个中文字符开始切分，中文前面的内容会完整作为英文或英文词组。只有英文也可以导入，中文释义会留空。</div>
-              <textarea id="wordImportText" placeholder="achievement 成就&#10;travel writer 旅行作家&#10;research assistant 研究员&#10;storage 储存"></textarea>
-              <div class="row mobile-full">
-                <button id="appendWordsBtn">追加到词库</button>
-                <button class="danger" id="replaceWordsBtn">清空并重建词库</button>
-              </div>
-            </div>
+            <div class="stats">${renderStats(lib)}</div>
           </section>
 
           <section class="card span-12">
@@ -2170,6 +2266,9 @@
         alert("修复完成：已修复 " + result.repaired + " 条，因重复跳过 " + result.skipped + " 条。");
         renderLibraryManager();
       };
+      document.querySelectorAll("#libraryManagePanel > .section-toggle").forEach(btn => {
+        btn.onclick = () => btn.closest(".collapsible-section").classList.toggle("is-open");
+      });
       bindWordTableEvents(lib);
     }
 
@@ -2383,16 +2482,23 @@
           </section>
 
           ${categoryCounts ? `
-          <section class="card span-12 today-banner">
-            <div class="stats">
-              <div class="stat"><div class="small muted">今日总词数</div><div class="num">${categoryCounts.total}</div></div>
-              <div class="stat"><div class="small muted">今日新词</div><div class="num">${categoryCounts.new}</div></div>
-              <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${categoryCounts.wrong}</div></div>
-              <div class="stat"><div class="small muted">今日到期复查</div><div class="num">${categoryCounts.review}</div></div>
+          <section class="card span-12 today-combined-bar">
+            <div class="today-combined-inner">
+              <div class="today-primary-stats">
+                <div class="stat"><div class="small muted">今日总词数</div><div class="num">${categoryCounts.total}</div></div>
+                <div class="stat"><div class="small muted">今日新词</div><div class="num">${categoryCounts.new}</div></div>
+                <div class="stat"><div class="small muted">今日错词复习</div><div class="num">${categoryCounts.wrong}</div></div>
+                <div class="stat"><div class="small muted">今日到期复查</div><div class="num">${categoryCounts.review}</div></div>
+              </div>
+              <div class="today-divider"></div>
+              <div class="today-secondary-stats">
+                <div class="stat"><div class="small muted">当前学习 Day</div><div class="num">${dayNumber}</div></div>
+                <div class="stat"><div class="small muted">已学 / 总数</div><div class="num">${learned} / ${lib.words.length}</div></div>
+                <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
+              </div>
             </div>
           </section>
-          ` : ''}
-
+          ` : `
           <section class="card span-12 secondary-bar">
             <div class="stats">
               <div class="stat"><div class="small muted">当前学习 Day</div><div class="num">${dayNumber}</div></div>
@@ -2400,6 +2506,7 @@
               <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pendingCount}</div></div>
             </div>
           </section>
+          `}
 
           ${task ? renderTaskPanel(lib, task, activeMode) : renderNoTaskPanel(lib)}
         </div>
@@ -2487,7 +2594,6 @@
 
       return `
         <section class="card span-12">
-          <div class="notice small" style="margin-bottom:12px">${renderTaskCountSummary(categoryCounts)}</div>
           <div class="row" style="margin-top:4px">
             <label style="max-width:220px">本次记录日期
               <input id="taskDateInput" type="date" value="${escapeHtml(task.date || todayDate())}">
@@ -2511,16 +2617,17 @@
       return `
         <section class="card span-12">
           <div class="player">
-            <div>
+            <div class="player-progress-area">
               <div class="progress-big">第 ${dictationIndex + 1} / ${total} 个</div>
               <div class="word-hidden">听写过程中不显示英文和中文释义</div>
+              <button id="goMarkBtn" class="player-go-mark-btn">全部播放完成，进入标记错误</button>
             </div>
             <div class="split" style="width:min(680px, 100%); text-align:left">
               <label>语速：<span id="playerSpeechRateText">${Number(lib.settings.speechRate || 0.9).toFixed(1)}x</span>
                 <input id="playerSpeechRate" type="range" min="0.5" max="1.5" step="0.1" value="${escapeHtml(lib.settings.speechRate || 0.9)}">
               </label>
               <label>朗读声音
-                <select id="playerSpeechVoice" data-speech-voice-select>
+                <select id="playerSpeechVoice" data-speech-voice-select style="width:auto">
                   ${getSpeechVoiceOptionsHtml(lib.settings.speechVoiceName || "google-us")}
                 </select>
               </label>
@@ -2541,7 +2648,6 @@
               <button class="secondary" id="stopAutoBtn">停止自动播放</button>
             </div>
             <div class="small muted">键盘左箭头：上一个并播放；右箭头：下一个并播放。</div>
-            <button class="danger" id="goMarkBtn">全部播放完成，进入标记错误</button>
           </div>
         </section>
       `;
@@ -2877,9 +2983,15 @@
           <section class="card span-12">
             <div class="row between">
               <div>
-                <h2>错词本</h2>
-                <div class="small muted">这里保留历史上所有曾经错过的词，和当前错词池分开管理。</div>
-                <div class="small muted">移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。如果这个词是当时误标为错误，请到 设置 → 手动校准 → 历史记录修改 中修正对应 Day 的错词勾选，系统会自动重算错误次数和错词池。</div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:0">
+                  <h2 style="margin-bottom:0">错词本</h2>
+                  <button type="button" class="info-btn" id="wrongBookHelpBtn" style="margin-bottom:0" title="查看说明">?</button>
+                </div>
+                <div class="info-box" id="wrongBookHelp" style="display:none; margin-top:8px; margin-bottom:0">
+                  这里保留历史上所有曾经错过的词，和当前错词池分开管理。<br>
+                  移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。<br>
+                  如果这个词是当时误标为错误，请到 设置 → 手动校准 → 历史记录修改 中修正对应 Day 的错词勾选，系统会自动重算错误次数和错词池。
+                </div>
               </div>
               <div class="row">
                 <label>筛选
@@ -2911,6 +3023,10 @@
       document.getElementById("wrongSort").value = sort;
       document.getElementById("wrongFilter").onchange = renderWrongBook;
       document.getElementById("wrongSort").onchange = renderWrongBook;
+      document.getElementById("wrongBookHelpBtn").onclick = () => {
+        const box = document.getElementById("wrongBookHelp");
+        if (box) box.style.display = box.style.display === "none" ? "" : "none";
+      };
       document.getElementById("exportWrongWordsBtn").onclick = () => {
         const filterLabels = { all: "全部", pending: "当前错词池", focus: "重点", stubborn: "顽固" };
         exportWrongWordsToCsv(lib, words, filterLabels[filter] || "错词");
@@ -3482,8 +3598,6 @@
       const totalDictations = records.length;
       const totalWords = records.reduce((sum, record) => sum + getTaskCategoryCounts(record).total, 0);
       const totalWrong = records.reduce((sum, record) => sum + new Set(record.wrongWordIds || []).size, 0);
-      const totalNewWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).newWrong, 0);
-      const totalPendingWrong = records.reduce((sum, record) => sum + getRecordWrongStats(record).pendingWrong, 0);
       const learned = lib.words.filter(word => word.firstLearnDay != null).length;
       const pending = getPendingWrongWords(lib).length;
       const accuracy = totalWords ? Math.round(((totalWords - totalWrong) / totalWords) * 100) : 0;
@@ -3494,12 +3608,8 @@
             <div class="small muted">按实际记录日期查看听写情况。日期默认取电脑日期，也可以在这里手动修改。</div>
           </section>
           <section class="card span-12">
-            <div class="stats">
+            <div class="stats" style="grid-template-columns: repeat(4, 1fr)">
               <div class="stat"><div class="small muted">完成次数</div><div class="num">${totalDictations}</div></div>
-              <div class="stat"><div class="small muted">累计听写词次</div><div class="num">${totalWords}</div></div>
-              <div class="stat"><div class="small muted">累计错误</div><div class="num">${totalWrong}</div></div>
-              <div class="stat"><div class="small muted">新词错误</div><div class="num">${totalNewWrong}</div></div>
-              <div class="stat"><div class="small muted">错词池错误</div><div class="num">${totalPendingWrong}</div></div>
               <div class="stat"><div class="small muted">累计正确率</div><div class="num">${accuracy}%</div></div>
               <div class="stat"><div class="small muted">已学新词</div><div class="num">${learned} / ${lib.words.length}</div></div>
               <div class="stat"><div class="small muted">当前错词池</div><div class="num">${pending}</div></div>
