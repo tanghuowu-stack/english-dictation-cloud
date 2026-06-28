@@ -2025,7 +2025,7 @@
     }
 
     function renderApp() {
-      if (viewName === "manual") viewName = "tools";
+      if (viewName === "manual" || viewName === "tools") viewName = "settings";
       renderNav();
       renderLibrarySelect();
       if (viewName === "library") renderLibraryManager();
@@ -2033,7 +2033,6 @@
       else if (viewName === "wrong") renderWrongBook();
       else if (viewName === "stats") renderStatistics();
       else if (viewName === "settings") renderSettings();
-      else if (viewName === "tools" || viewName === "manual") renderToolsView();
     }
 
     function renderNav() {
@@ -2042,8 +2041,7 @@
         ["wrong", "错词本"],
         ["library", "词库"],
         ["stats", "统计"],
-        ["settings", "设置"],
-        ["tools", "工具"]
+        ["settings", "设置"]
       ];
       document.getElementById("mainNav").innerHTML = navItems.map(item => {
         return '<button class="nav-btn ' + (viewName === item[0] ? "active" : "") + '" data-view="' + item[0] + '">' + item[1] + '</button>';
@@ -2881,7 +2879,7 @@
               <div>
                 <h2>错词本</h2>
                 <div class="small muted">这里保留历史上所有曾经错过的词，和当前错词池分开管理。</div>
-                <div class="small muted">移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。如果这个词是当时误标为错误，请到 工具 → 历史记录修改 中修正对应 Day 的错词勾选，系统会自动重算错误次数和错词池。</div>
+                <div class="small muted">移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。如果这个词是当时误标为错误，请到 设置 → 手动校准 → 历史记录修改 中修正对应 Day 的错词勾选，系统会自动重算错误次数和错词池。</div>
               </div>
               <div class="row">
                 <label>筛选
@@ -4131,9 +4129,10 @@
               </div>
             </div>
           </section>
+
           <section class="card span-12">
             <h3>学习计划</h3>
-            <div class="grid">
+            <div class="grid" style="gap:8px">
               ${numberField("dailyTargetWords", "当天新词数", s.dailyTargetWords ?? 30, 0, 100, 5)}
               ${numberField("dailyReviewWords", "当天到期复查数", s.dailyReviewWords ?? 30, 0, 100, 5)}
               ${numberField("reviewDelayDays", "延迟复查天数", s.reviewDelayDays, 1, 365)}
@@ -4141,11 +4140,13 @@
                 <input data-setting="pauseNewWords" type="checkbox" ${s.pauseNewWords ? "checked" : ""}>
                 暂停新词
               </label>
+              ${numberField("correctTimesToExitWrongPool", "错词写对几次移出错词池", s.correctTimesToExitWrongPool, 1, 10)}
             </div>
           </section>
+
           <section class="card span-12">
             <h3>播放设置</h3>
-            <div class="grid">
+            <div class="grid" style="gap:8px">
               <label class="span-4">播放顺序
                 <select data-setting="playOrder">
                   <option value="ordered"${s.playOrder === "ordered" ? " selected" : ""}>按导入顺序</option>
@@ -4163,15 +4164,115 @@
                 </select>
               </label>
             </div>
-          </section>
-          <section class="card span-12">
-            <h3>错词规则</h3>
-            <div class="grid">
-              ${numberField("correctTimesToExitWrongPool", "错词写对几次移出错词池", s.correctTimesToExitWrongPool, 1, 10)}
-            </div>
-            <div class="row mobile-full" style="margin-top:14px">
-              <button id="saveSettingsBtn">保存设置</button>
+            <div class="row mobile-full" style="margin-top:14px; justify-content:flex-end">
               <button class="ghost" id="testSpeechBtn">测试朗读</button>
+              <button id="saveSettingsBtn">保存设置</button>
+            </div>
+          </section>
+
+          <section class="card span-12 collapsible-section is-open" id="cloudSyncPanel">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">云端同步</span>
+                <span class="section-toggle-desc">账号登录与同步状态</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="cloud-info" title="查看说明">？</button>
+              <div class="info-box" id="cloud-info" hidden>数据变更后会自动上传；切回前台或刷新页面时会自动检查云端并同步。覆盖本机数据仍需手动操作。</div>
+              <div class="stats">
+                <div class="stat"><div class="small muted">当前模式</div><div class="strong" id="cloudModeText">正在检查...</div></div>
+                <div class="stat"><div class="small muted">当前用户</div><div class="strong" id="cloudUserText">正在检查...</div></div>
+              </div>
+              <div class="row mobile-full" id="cloudLoginControls" style="margin-top:12px">
+                <label style="flex:1 1 280px">邮箱
+                  <input id="cloudEmailInput" type="email" autocomplete="email" placeholder="请输入邮箱">
+                </label>
+                <label style="flex:1 1 280px">密码
+                  <input id="cloudPasswordInput" type="password" autocomplete="current-password" placeholder="请输入密码">
+                </label>
+                <button id="cloudLoginBtn" type="button">登录</button>
+                <button class="secondary" id="cloudLogoutBtn" type="button" hidden>退出登录</button>
+              </div>
+              <div class="small muted" id="cloudSyncMessage" style="margin-top:10px" aria-live="polite"></div>
+              <div class="row mobile-full" style="margin-top:12px">
+                <button id="cloudUploadBtn" type="button" disabled>上传本地数据到云端</button>
+                <button class="secondary" id="cloudSummaryBtn" type="button" disabled>查看云端数据摘要</button>
+                <button class="secondary" id="cloudDiagnoseBtn" type="button" disabled>诊断本机与云端数据</button>
+                <button class="danger" id="cloudDownloadBtn" type="button" disabled>从云端下载到本机</button>
+              </div>
+              <div class="small muted" style="margin-top:8px">用于在新设备或空浏览器中恢复云端数据。会覆盖当前设备的本地数据，请先备份。</div>
+              <div class="stats" id="cloudDataSummary" style="margin-top:12px" hidden>
+                <div class="stat"><div class="small muted">云端词库</div><div class="num" id="cloudLibraryCount">0</div></div>
+                <div class="stat"><div class="small muted">云端单词</div><div class="num" id="cloudWordCount">0</div></div>
+                <div class="stat"><div class="small muted">云端听写记录</div><div class="num" id="cloudSessionCount">0</div></div>
+                <div class="stat"><div class="small muted">云端学习/错词进度</div><div class="num" id="cloudProgressCount">0</div></div>
+              </div>
+              <div class="notice small" id="cloudDiagnosticOutput" style="margin-top:12px; white-space:pre-wrap" hidden></div>
+              <div class="small muted" id="cloudActionMessage" style="margin-top:10px; white-space:pre-wrap" aria-live="polite"></div>
+              <button class="secondary" id="cloudReloadBtn" type="button" style="margin-top:10px" hidden>刷新页面并使用恢复的数据</button>
+            </div>
+          </section>
+
+          <section class="card span-12 collapsible-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">数据备份</span>
+                <span class="section-toggle-desc">导出与导入词库及全部数据</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="backup-info" title="查看说明">？</button>
+              <div class="info-box" id="backup-info" hidden>导入会覆盖数据，操作前建议先导出全部数据备份。</div>
+              <div class="row mobile-full">
+                <button id="statsDownloadLibraryBtn">导出当前词库</button>
+                <button class="danger" id="statsImportReplaceLibraryBtn">导入并覆盖当前词库</button>
+                <button class="secondary" id="statsImportNewLibraryBtn">导入为新词库</button>
+                <button id="statsDownloadAllBtn">导出全部数据</button>
+                <button class="danger" id="statsImportAllBtn">导入并覆盖全部数据</button>
+              </div>
+              <input id="statsLibraryImportFile" type="file" accept="application/json,.json" style="display:none">
+              <input id="statsAllImportFile" type="file" accept="application/json,.json" style="display:none">
+            </div>
+          </section>
+
+          <section class="card span-12 collapsible-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">手动校准</span>
+                <span class="section-toggle-desc">补录历史记录、维护错词池</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <button class="info-btn" type="button" data-info-target="manual-info" title="查看说明">？</button>
+              <div class="info-box" id="manual-info" hidden>适用于补录已在线下完成的听写、修正历史记录、维护错词池。日常听写不需要使用。</div>
+              <div class="tabs">
+                <button class="secondary" data-manual-tab="batch">连续按天补录</button>
+                <button class="secondary" data-manual-tab="strict">高级：指定新词补录</button>
+                <button class="secondary" data-manual-tab="quick">快速校准已学进度</button>
+                <button class="secondary" data-manual-tab="pool">手动维护错词池</button>
+                <button class="secondary" data-manual-tab="history">历史记录修改</button>
+              </div>
+              <div id="manualContent" style="margin-top:12px"></div>
+            </div>
+          </section>
+
+          <section class="card span-12 collapsible-section danger-zone-section">
+            <button class="section-toggle" type="button">
+              <div class="section-toggle-info">
+                <span class="section-toggle-title">⚠ 危险操作</span>
+                <span class="section-toggle-desc">不可逆的记录修改，操作前请先备份数据</span>
+              </div>
+              <span class="section-toggle-arrow">▾</span>
+            </button>
+            <div class="section-body">
+              <div class="notice small">这些操作会改变学习记录。操作前建议先导出全部数据备份。</div>
+              <div class="row mobile-full" style="margin-top:12px">
+                <button class="danger" id="undoLatestRecordBtn">撤销最近一次完成记录</button>
+              </div>
             </div>
           </section>
         </div>
@@ -4201,6 +4302,15 @@
         settingsRate.oninput = () => settingsRateText.textContent = Number(settingsRate.value).toFixed(1) + "x";
       }
       hydrateSpeechVoiceSelects();
+      document.querySelectorAll("[data-manual-tab]").forEach(button => {
+        button.onclick = () => renderManualTab(button.dataset.manualTab);
+      });
+      renderManualTab("batch");
+      bindStatisticsBackupEvents(lib);
+      setupToolsSections();
+      if (window.cloudSync && typeof window.cloudSync.mount === "function") {
+        window.cloudSync.mount();
+      }
     }
 
     function numberField(key, labelText, value, min, max, step = 1) {
