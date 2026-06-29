@@ -525,6 +525,9 @@ async function signOut(elements) {
 let _autoSyncInProgress = false;
 // 上传期间屏蔽拉取，防止读到云端中间状态（库行已更新但 user_word_progress 还未写入）
 let _autoUploadInProgress = false;
+// iOS PWA 下 visibilitychange 极其频繁，60 秒内不重复发起 freshness 检查
+let _lastAutoSyncCheckTime = 0;
+const AUTO_SYNC_MIN_INTERVAL_MS = 60 * 1000;
 
 async function checkCloudFreshness() {
   try {
@@ -607,17 +610,32 @@ function showSyncToast(message) {
 async function autoSyncCloudToLocalIfNewer() {
   if (_autoSyncInProgress) return;
   if (_autoUploadInProgress) return;
+  // Fix2: iOS PWA visibilitychange 高频触发保护，60 秒内不重复发起网络检查
+  const now = Date.now();
+  if (now - _lastAutoSyncCheckTime < AUTO_SYNC_MIN_INTERVAL_MS) return;
+  _lastAutoSyncCheckTime = now;
   _autoSyncInProgress = true;
   try {
     const isFresh = await checkCloudFreshness();
     if (!isFresh) return;
 
     const currentLocalData = getLocalDataSnapshot();
+    // Fix3: 用户正在听写中（currentDraftTask 存在），跳过覆盖和刷新，不打断听写进度
+    const activeLib = (currentLocalData?.libraries || []).find(
+      lib => lib.libraryId === currentLocalData?.activeLibraryId
+    ) || (currentLocalData?.libraries || [])[0];
+    if (activeLib?.currentDraftTask) return;
+
     const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0");
     const validation = validateRestoredData(result.restoredData, result.cloudCounts || {});
     if (!validation.valid) return;
 
     replaceLocalData(result.restoredData);
+    // Fix1: 更新本机 lib.updatedAt 到当前时刻，使其 ≥ 云端 user_word_progress.updated_at，
+    // 防止下次 checkCloudFreshness 的第4信号（时间戳比较）再次误判为"云端更新"而触发死循环
+    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
+      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
+    }
     showSyncToast("已同步最新数据");
     setTimeout(() => window.location.reload(), 500);
   } catch {

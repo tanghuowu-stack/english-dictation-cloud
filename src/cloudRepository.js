@@ -875,7 +875,9 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0") {
       libraryId: cloudLibraryToLocalId.get(cloudLibrary.id),
       libraryName: cloudLibrary.name || "未命名词库",
       createdAt: datePart(cloudLibrary.created_at, new Date().toISOString().slice(0, 10)),
-      updatedAt: cloudLibrary.updated_at || new Date().toISOString(),
+      // 用恢复时刻（而非 libraries 表的 Step1 时间戳）写入 updatedAt，
+      // 确保它 ≥ 云端 user_word_progress.updated_at（Step5），从根源上防止时间戳误判死循环。
+      updatedAt: new Date().toISOString(),
       settings: restoredSettings(settingsByLibraryId.get(cloudLibrary.id)),
       words,
       dailyRecords,
