@@ -738,6 +738,130 @@
       .stat { min-height: 64px; padding: 9px; }
       .stat .num { font-size: 20px; }
     }
+
+    /* 统计页4列数据格，用 class 代替 inline style 以便响应式覆盖 */
+    .stats-4col { grid-template-columns: repeat(4, 1fr); }
+
+    /* ===== 手机竖屏专属适配 ≤600px ===== */
+    @media (max-width: 600px) {
+      /* 整体边距收紧 */
+      main { padding: 8px; }
+      .card { padding: 12px; }
+      h1 { font-size: 17px; }
+      .topbar { padding: 10px 12px; }
+
+      /* 顶部导航 tab：强制横向滚动，不换行 */
+      nav { flex-wrap: nowrap; }
+
+      /* 1. 通用表格：启用横向滚动，表头不换行，防止文字被压成竖排单字 */
+      .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .table-wrap table {
+        width: max-content;
+        min-width: 100%;
+      }
+      th { white-space: nowrap; }
+      td { white-space: normal; }
+      /* 中文释义和英文列保留合理最小宽度，保证横向可读 */
+      .word-cell { min-width: 100px; }
+      .meaning-cell { min-width: 130px; }
+
+      /* 2. 卡片式表格（每日记录 11 列 / 错词本 7 列）
+            在手机端将每行转换为独立卡片，标签:值纵向排列 */
+      .table-card-layout {
+        overflow: visible !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        max-height: none !important;
+        box-shadow: none !important;
+      }
+      .table-card-layout table {
+        display: block;
+        width: 100%;
+        min-width: 0;
+      }
+      .table-card-layout thead { display: none; }
+      .table-card-layout tbody {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .table-card-layout tbody tr {
+        display: block;
+        background: var(--color-card-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-card);
+        padding: 10px 12px;
+        box-shadow: var(--shadow-card);
+      }
+      .table-card-layout tbody td {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px solid var(--color-border);
+        white-space: normal;
+        min-width: 0;
+        font-size: 14px;
+      }
+      .table-card-layout tbody tr td:last-child { border-bottom: none; }
+      /* 标签（来自 data-label 属性）显示在左侧 */
+      .table-card-layout tbody td[data-label]:not([data-label=""])::before {
+        content: attr(data-label);
+        min-width: 70px;
+        max-width: 70px;
+        flex-shrink: 0;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        font-weight: 500;
+        padding-top: 3px;
+        line-height: 1.4;
+      }
+      /* 卡片内：中文释义正常横排 */
+      .table-card-layout .word-cell,
+      .table-card-layout .meaning-cell { min-width: 0; white-space: normal; font-weight: inherit; }
+      /* 卡片内：操作按钮自动换行 */
+      .table-card-layout .actions-cell .row { flex-wrap: wrap; gap: 6px; }
+      /* 卡片内：date/number 输入框不超出 */
+      .table-card-layout input[type="date"] { min-width: 0; width: auto; max-width: 160px; }
+      .table-card-layout input[type="number"] { width: 80px; min-width: 0; }
+
+      /* 3. 今日听写页："进入标记错误"按钮改为静态流，不与计数文字重叠 */
+      .player-go-mark-btn {
+        position: static;
+        display: block;
+        margin: 10px auto 0;
+        font-size: 13px;
+        padding: 8px 14px;
+        min-height: 42px;
+        width: auto;
+      }
+
+      /* 4. 今日横幅：主要数据 2×2，次要数据紧凑三列 */
+      .today-primary-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+      }
+      .today-primary-stats .stat { min-height: 48px; padding: 7px 8px; }
+      .today-primary-stats .stat .num { font-size: 18px; }
+      .today-secondary-stats {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+      .today-secondary-stats .stat { min-height: 38px; padding: 4px 5px; }
+      .today-secondary-stats .stat .num { font-size: 14px; }
+      .today-secondary-stats .stat .small { font-size: 10px; }
+
+      /* 5. 统计页4列格：在手机上改为2列 */
+      .stats-4col { grid-template-columns: repeat(2, 1fr); }
+
+      /* 6. 按钮与 tag 在窄屏保证可点击性 */
+      td button { min-height: 36px; }
+      .tag { white-space: nowrap; }
+    }
   </style>
 </head>
 <body>
@@ -3037,7 +3161,7 @@
     function renderWrongTable(lib, words) {
       if (!words.length) return '<div class="empty">当前筛选下没有错词。</div>';
       return `
-        <div class="table-wrap">
+        <div class="table-wrap table-card-layout">
           <table>
             <thead>
               <tr>
@@ -3053,17 +3177,17 @@
             <tbody>
               ${words.map(word => `
                 <tr>
-                  <td class="word-cell">${escapeHtml(word.word)}</td>
-                  <td>${escapeHtml(word.meaning || "")}</td>
-                  <td><input style="width:80px" type="number" min="0" data-wrong-count="${word.id}" value="${word.wrongCount}"></td>
-                  <td>
+                  <td data-label="英文" class="word-cell">${escapeHtml(word.word)}</td>
+                  <td data-label="中文释义">${escapeHtml(word.meaning || "")}</td>
+                  <td data-label="错误次数"><input style="width:80px" type="number" min="0" data-wrong-count="${word.id}" value="${word.wrongCount}"></td>
+                  <td data-label="状态">
                     ${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : '<span class="tag">历史错词</span>'}
                     ${word.isFocus ? '<span class="tag review">重点</span>' : ''}
                     ${word.isStubborn ? '<span class="tag wrong">顽固</span>' : ''}
                   </td>
-                  <td>${word.firstLearnDay == null ? "-" : "Day " + word.firstLearnDay}</td>
-                  <td>${renderReviewStatus(word)}</td>
-                  <td class="actions-cell">
+                  <td data-label="首次学习">${word.firstLearnDay == null ? "-" : "Day " + word.firstLearnDay}</td>
+                  <td data-label="错词复查">${renderReviewStatus(word)}</td>
+                  <td data-label="" class="actions-cell">
                     <div class="row">
                       <button class="secondary" data-toggle-pending="${word.id}" title="移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。">${word.isPendingWrong ? "移出错词池" : "加入错词池"}</button>
                       <button class="ghost" data-toggle-focus="${word.id}">${word.isFocus ? "取消重点" : "设为重点"}</button>
@@ -3608,7 +3732,7 @@
             <div class="small muted">按实际记录日期查看听写情况。日期默认取电脑日期，也可以在这里手动修改。</div>
           </section>
           <section class="card span-12">
-            <div class="stats" style="grid-template-columns: repeat(4, 1fr)">
+            <div class="stats stats-4col">
               <div class="stat"><div class="small muted">完成次数</div><div class="num">${totalDictations}</div></div>
               <div class="stat"><div class="small muted">累计正确率</div><div class="num">${accuracy}%</div></div>
               <div class="stat"><div class="small muted">已学新词</div><div class="num">${learned} / ${lib.words.length}</div></div>
@@ -3783,7 +3907,7 @@
     function renderStatisticsTable(lib, records) {
       if (!records.length) return '<div class="empty">还没有听写记录。</div>';
       return `
-        <div class="table-wrap" style="margin-top:12px">
+        <div class="table-wrap table-card-layout" style="margin-top:12px">
           <table>
             <thead>
               <tr>
@@ -3809,17 +3933,17 @@
                 const rate = total ? Math.round(((total - wrong) / total) * 100) : 0;
                 return `
                   <tr>
-                    <td><input type="date" data-record-date="${record.recordId}" value="${escapeHtml(record.date || todayDate())}"></td>
-                    <td>Day ${record.dayNumber}</td>
-                    <td>${total}</td>
-                    <td>${wrong}</td>
-                    <td>${wrongStats.newWrong}</td>
-                    <td>${wrongStats.pendingWrong}</td>
-                    <td>${rate}%</td>
-                    <td>${counts.new}</td>
-                    <td>${counts.wrong}</td>
-                    <td>${counts.review}</td>
-                    <td><button class="secondary" data-export-record-wrong="${record.recordId}">导出错词</button></td>
+                    <td data-label="日期"><input type="date" data-record-date="${record.recordId}" value="${escapeHtml(record.date || todayDate())}"></td>
+                    <td data-label="学习 Day">Day ${record.dayNumber}</td>
+                    <td data-label="总词数">${total}</td>
+                    <td data-label="错误">${wrong}</td>
+                    <td data-label="新词错误">${wrongStats.newWrong}</td>
+                    <td data-label="错词池错误">${wrongStats.pendingWrong}</td>
+                    <td data-label="正确率">${rate}%</td>
+                    <td data-label="新词">${counts.new}</td>
+                    <td data-label="错词复习">${counts.wrong}</td>
+                    <td data-label="到期复查">${counts.review}</td>
+                    <td data-label=""><button class="secondary" data-export-record-wrong="${record.recordId}">导出错词</button></td>
                   </tr>
                 `;
               }).join("")}
