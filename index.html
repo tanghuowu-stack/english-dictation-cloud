@@ -1913,6 +1913,7 @@
       correctTimesToExitWrongPool: 1
     };
     const DAILY_MAX_WORDS = 60;
+    const SUPPLEMENT_REVIEW_COOLDOWN_DAYS = 7;
 
     // Fix R6：这个异常检测（低 Day 下某个固定词数全部已学完，大概率是同步/校验出错而不是真的学完）
     // 原来在本文件和 cloudSyncUi.js 里各写了一份，阈值不一致（13 vs 20）。统一到这里一份，
@@ -2642,7 +2643,6 @@
     function getSupplementReviewWords(dayNumber, lib = getCurrentLibrary(), excludedIds = []) {
       if (!lib?.settings?.autoFillReviewWords) return [];
       const excluded = new Set(excludedIds);
-      const reviewCooldownDays = Math.max(1, Number(lib.settings.reviewDelayDays || 15));
       return lib.words
         .filter(word => {
           const lastReviewDay = getLastReviewPracticeDay(lib, word.id);
@@ -2650,17 +2650,20 @@
             && Number(word.wrongCount || 0) > 0
             && !word.isPendingWrong
             && !excluded.has(word.id)
-            && (!lastReviewDay || Number(dayNumber) - lastReviewDay >= reviewCooldownDays);
+            && (!lastReviewDay || Number(dayNumber) - lastReviewDay >= SUPPLEMENT_REVIEW_COOLDOWN_DAYS);
         })
         .sort((a, b) => {
+          const aLastReviewDay = getLastReviewPracticeDay(lib, a.id);
+          const bLastReviewDay = getLastReviewPracticeDay(lib, b.id);
+          if (!aLastReviewDay && bLastReviewDay) return -1;
+          if (aLastReviewDay && !bLastReviewDay) return 1;
+          if (aLastReviewDay !== bLastReviewDay) return aLastReviewDay - bLastReviewDay;
           const aDue = getWrongReviewDueDay(a);
           const bDue = getWrongReviewDueDay(b);
           const aScheduled = aDue != null;
           const bScheduled = bDue != null;
           if (aScheduled !== bScheduled) return aScheduled ? -1 : 1;
           if (aScheduled && aDue !== bDue) return aDue - bDue;
-          const reviewDayOrder = getLastReviewPracticeDay(lib, a.id) - getLastReviewPracticeDay(lib, b.id);
-          if (reviewDayOrder) return reviewDayOrder;
           const wrongDayOrder = Number(a.lastWrongDay || 0) - Number(b.lastWrongDay || 0);
           if (wrongDayOrder) return wrongDayOrder;
           return a.index - b.index;
@@ -2681,7 +2684,7 @@
           if (!selectedReviewIds.includes(word.id)) selectedReviewIds.push(word.id);
           return;
         }
-        if (selectedStandaloneReviewCount < reviewLimit) {
+        if (selectedStandaloneReviewCount < reviewLimit && selectedIdSet.size < DAILY_MAX_WORDS) {
           selectedReviewIds.push(word.id);
           selectedIdSet.add(word.id);
           selectedStandaloneReviewCount += 1;
@@ -2691,7 +2694,9 @@
       });
 
       supplementReviewWords.forEach(word => {
-        if (selectedStandaloneReviewCount >= reviewLimit || selectedIdSet.has(word.id)) return;
+        if (selectedStandaloneReviewCount >= reviewLimit
+          || selectedIdSet.size >= DAILY_MAX_WORDS
+          || selectedIdSet.has(word.id)) return;
         selectedReviewIds.push(word.id);
         selectedSupplementReviewIds.push(word.id);
         selectedIdSet.add(word.id);
@@ -2707,7 +2712,7 @@
       const newWordIds = [];
       const newLimit = clampNumber(plannedNewCount, 0, 100, 30);
       for (const word of unlearnedWords) {
-        if (newWordIds.length >= newLimit) break;
+        if (newWordIds.length >= newLimit || selectedIdSet.size >= DAILY_MAX_WORDS) break;
         if (selectedIdSet.has(word.id)) continue;
         newWordIds.push(word.id);
         selectedIdSet.add(word.id);
