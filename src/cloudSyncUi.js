@@ -719,7 +719,7 @@ async function autoSyncCloudToLocalIfNewer() {
     const activeLib = (currentLocalData?.libraries || []).find(
       lib => lib.libraryId === currentLocalData?.activeLibraryId
     ) || (currentLocalData?.libraries || [])[0];
-    if (activeLib?.currentDraftTask) return;
+    if (activeLib?.currentDraftTask || currentLocalData?.combinedDraftTask) return;
 
     // Fix S4：本机存在未确认上传成功的变更时，先尝试补传，避免被本次下载覆盖丢失
     if (currentLocalData?.pendingCloudUpload) {
@@ -768,6 +768,9 @@ async function autoSyncCloudToLocalIfNewer() {
       console.warn("[cloudSync] 拉取完成时检测到本机正在上传（提交了新的听写记录），放弃本次覆盖以避免冲突");
       return;
     }
+
+    // 用户可能在下载期间刚开始合并听写，覆盖前再次保护本机场次。
+    if (getLocalDataSnapshot()?.combinedDraftTask) return;
 
     replaceLocalData(result.restoredData);
     // Fix1: 更新本机 lib.updatedAt 到当前时刻，使其 ≥ 云端 user_word_progress.updated_at，

@@ -1817,6 +1817,13 @@
       .library-import-heading { display: grid; gap: 3px; }
       .library-import-panel textarea { min-height: 220px; }
     }
+    .study-library-plan {
+      padding: 14px;
+      margin-bottom: 14px;
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+    }
+    .study-library-plan fieldset:disabled { opacity: .55; }
   </style>
 </head>
 <body>
@@ -2137,9 +2144,11 @@
       data.version = APP_VERSION;
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        return true;
       } catch (error) {
         console.error("[saveData] localStorage.setItem 失败：", error);
         alert("保存失败，可能是浏览器隐私模式限制或存储空间已满。请退出隐私模式或清理存储空间后重试，本次修改可能未保存。");
+        return false;
       }
     }
 
@@ -2426,6 +2435,7 @@
       }
       data.libraries.push(lib);
       data.activeLibraryId = lib.libraryId;
+      if (!data.combinedDraftTask) data.studyLibraryIds = [lib.libraryId];
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("library-created");
@@ -2438,6 +2448,7 @@
       stopAutoPlay();
       if (data.libraries.some(lib => lib.libraryId === libraryId)) {
         data.activeLibraryId = libraryId;
+        if (!data.combinedDraftTask) data.studyLibraryIds = [libraryId];
         dictationIndex = 0;
         todaySummary = null;
         manualStrictTask = null;
@@ -2456,6 +2467,7 @@
       data.libraries = data.libraries.filter(item => item.libraryId !== libraryId);
       if (!data.libraries.length) createLibrary("我的词库", false);
       data.activeLibraryId = data.libraries[0].libraryId;
+      if (!data.combinedDraftTask) data.studyLibraryIds = [data.activeLibraryId];
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("library-deleted");
@@ -2731,9 +2743,9 @@
       };
     }
 
-    function buildTodayTask(lib = getCurrentLibrary()) {
+    function buildTodayTask(lib = getCurrentLibrary(), persist = true) {
       if (!lib) return null;
-      if (lib.currentDraftTask) return lib.currentDraftTask;
+      if (persist && lib.currentDraftTask) return lib.currentDraftTask;
 
       const dayNumber = getNextDayNumber(lib);
       const plannedNewCount = getPlannedNewWordCount(dayNumber, lib);
@@ -2775,7 +2787,7 @@
 
       taskWordIds = orderTaskIds(taskWordIds, lib);
 
-      lib.currentDraftTask = {
+      const task = {
         taskId: uid("task"),
         dayNumber,
         date: todayDate(),
@@ -2792,8 +2804,115 @@
         wrongOverflow: limited.wrongOverflow,
         sourceMap
       };
-      saveData();
-      return lib.currentDraftTask;
+      if (persist) {
+        lib.currentDraftTask = task;
+        saveData();
+      }
+      return task;
+    }
+
+    // 合并场次只保存分库任务快照；学习进度始终回写原词库。
+    function getStudyLibraries() {
+      const ids = data.studyLibraryIds || [getCurrentLibrary()?.libraryId];
+      return ids.map(id => data.libraries.find(lib => lib.libraryId === id)).filter(Boolean);
+    }
+
+    function libraryStudyState(lib) {
+      const state = JSON.stringify({ words: lib.words, dailyRecords: lib.dailyRecords });
+      return state.length + ":" + simpleHash(state);
+    }
+
+    function planCombinedTask(libraries, useDrafts = true) {
+      const parts = libraries.map(lib => ({
+        libraryId: lib.libraryId,
+        libraryName: lib.libraryName,
+        state: libraryStudyState(lib),
+        task: clone(useDrafts && lib.currentDraftTask ? lib.currentDraftTask : buildTodayTask(lib, false))
+      }));
+      const entries = [];
+      const byEnglish = new Map();
+      const sourceMap = {};
+      const categories = { wrong: [], review: [], supplement: [], new: [] };
+      parts.forEach(part => {
+        const lib = libraries.find(item => item.libraryId === part.libraryId);
+        part.task.taskWordIds.forEach(wordId => {
+          const word = getWordById(lib, wordId);
+          if (!word) throw new Error("任务中的单词已不存在，请重新生成任务。");
+          const key = normalizeWord(word.word);
+          let entry = byEnglish.get(key);
+          if (!entry) {
+            entry = { id: "combined_" + entries.length, word: word.word, references: [] };
+            byEnglish.set(key, entry);
+            entries.push(entry);
+          }
+          entry.references.push({ libraryId: lib.libraryId, wordId, libraryName: lib.libraryName, meaning: word.meaning });
+          sourceMap[entry.id] = uniqueWordIds([...(sourceMap[entry.id] || []), ...(part.task.sourceMap[wordId] || ["new"])]);
+          if (part.task.pendingWrongWordIds.includes(wordId)) categories.wrong.push(entry.id);
+          if (part.task.delayedReviewWordIds.includes(wordId)) categories.review.push(entry.id);
+          if ((part.task.supplementReviewWordIds || []).includes(wordId)) categories.supplement.push(entry.id);
+          if (part.task.newWordIds.includes(wordId)) categories.new.push(entry.id);
+        });
+      });
+      let taskWordIds = entries.map(entry => entry.id);
+      if (data.studyPlayOrder === "random") {
+        for (let i = taskWordIds.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [taskWordIds[i], taskWordIds[j]] = [taskWordIds[j], taskWordIds[i]];
+        }
+      }
+      return {
+        taskId: uid("combined"), date: todayDate(), createdAt: nowIso(), currentIndex: 0,
+        mode: "player", parts, entries, taskWordIds, sourceMap,
+        pendingWrongWordIds: uniqueWordIds(categories.wrong),
+        delayedReviewWordIds: uniqueWordIds(categories.review),
+        supplementReviewWordIds: uniqueWordIds(categories.supplement),
+        newWordIds: uniqueWordIds(categories.new), postponedReviewWordIds: [], checkedWrongWordIds: []
+      };
+    }
+
+    function getDictationLibrary() {
+      const task = data?.combinedDraftTask;
+      if (!task) return getCurrentLibrary();
+      const owner = data.libraries.find(lib => lib.libraryId === task.parts[0]?.libraryId) || getCurrentLibrary();
+      return {
+        libraryName: task.parts.map(part => part.libraryName).join(" + "),
+        settings: owner.settings, dailyRecords: [],
+        words: task.entries.map((entry, index) => ({
+          ...entry, index, originalNo: index + 1,
+          meaning: entry.references.map(ref => ref.libraryName + "：" + (ref.meaning || "无释义")).join("；")
+        })),
+        get currentDraftTask() { return data.combinedDraftTask; },
+        set currentDraftTask(value) { data.combinedDraftTask = value; }
+      };
+    }
+
+    function saveCombinedResult(task, checkedIds) {
+      if (data.combinedDraftTask?.taskId !== task.taskId) throw new Error("本场听写已提交或失效。");
+      // 先在副本中完成所有计算，再一次保存，避免某个词库成功、另一个失败。
+      const nextData = clone(data);
+      const wrong = new Set(checkedIds);
+      const summaries = task.parts.filter(part => part.task.taskWordIds.length).map(part => {
+        const lib = nextData.libraries.find(item => item.libraryId === part.libraryId);
+        if (!lib || libraryStudyState(lib) !== part.state || getNextDayNumber(lib) !== part.task.dayNumber) {
+          throw new Error("词库学习数据发生变化，请按当前设置重新生成本场听写。");
+        }
+        const wrongIds = task.entries.filter(entry => wrong.has(entry.id))
+          .flatMap(entry => entry.references.filter(ref => ref.libraryId === lib.libraryId).map(ref => ref.wordId));
+        const record = createDailyRecord(lib, { ...part.task, date: task.date }, wrongIds, "normal");
+        const summary = updateWordStatsFromRecord(lib, record);
+        lib.dailyRecords.push(record);
+        lib.currentDraftTask = null;
+        lib.updatedAt = nowIso();
+        return { ...summary, libraryId: lib.libraryId, libraryName: lib.libraryName, recordId: record.recordId };
+      });
+      nextData.combinedDraftTask = null;
+      const previousData = data;
+      data = nextData;
+      if (!saveData()) {
+        data = previousData;
+        throw new Error("保存失败，本场听写已保留，请重试。");
+      }
+      return summaries;
     }
 
     function getTodayTaskPreviewCounts(lib = getCurrentLibrary()) {
@@ -2905,7 +3024,7 @@
       return sameEnglishFamily || null;
     }
 
-    function getPreferredSpeechVoice(settings = getCurrentLibrary()?.settings || {}) {
+    function getPreferredSpeechVoice(settings = getDictationLibrary()?.settings || {}) {
       const voices = availableSpeechVoices.length ? availableSpeechVoices : refreshSpeechVoices();
       if (!voices.length) return null;
       const preset = getVoicePresetById(settings.speechVoiceName) || getVoicePresetById("google-us");
@@ -2947,7 +3066,7 @@
     }
 
     function hydrateSpeechVoiceSelects() {
-      const lib = getCurrentLibrary();
+      const lib = viewName === "today" ? getDictationLibrary() : getCurrentLibrary();
       if (!lib) return;
       document.querySelectorAll("[data-speech-voice-select]").forEach(select => {
         const current = getVoicePresetById(lib.settings.speechVoiceName) ? lib.settings.speechVoiceName : "google-us";
@@ -2966,7 +3085,7 @@
         alert("当前浏览器不支持 Web Speech API，请换用新版 Chrome、Edge 或 Safari。");
         return;
       }
-      const lib = getCurrentLibrary();
+      const lib = viewName === "today" ? getDictationLibrary() : getCurrentLibrary();
       const utterance = new SpeechSynthesisUtterance(String(wordText || ""));
       utterance.lang = "en-US";
       utterance.rate = clampNumber(lib?.settings?.speechRate, 0.5, 1.5, 0.9);
@@ -2980,6 +3099,26 @@
     }
 
     function startDictation() {
+      const libraries = getStudyLibraries();
+      if (data.combinedDraftTask || libraries.length > 1) {
+        try {
+          const task = data.combinedDraftTask || planCombinedTask(libraries);
+          if (task.taskWordIds.length > DAILY_MAX_WORDS) {
+            alert("合并去重后共有 " + task.taskWordIds.length + " 个词，超过整场 60 个上限。请先调整各词库的新词数或复查数。");
+            return;
+          }
+          if (!task.taskWordIds.length) { alert("所选词库今天没有需要听写的单词。"); return; }
+          task.date = document.getElementById("taskDateInput")?.value || task.date;
+          data.combinedDraftTask = task;
+          if (!saveData()) return;
+          todaySummary = null;
+          dictationIndex = task.currentIndex || 0;
+          renderTodayView(task.mode || "player");
+        } catch (error) { alert(error.message); }
+        return;
+      }
+      if (!libraries.length) { alert("请至少勾选一个词库。"); return; }
+      data.activeLibraryId = libraries[0].libraryId;
       const lib = getCurrentLibrary();
       if (!lib || !lib.words.length) {
         alert("请先在词库中导入单词。");
@@ -2996,6 +3135,20 @@
     }
 
     async function regenerateTodayTaskFromSettings(options = {}) {
+      if (data.combinedDraftTask) {
+        if (!options.skipConfirm && !await requestAppConfirmation("重新生成将清空本场播放进度及错词勾选，确定继续吗？")) return;
+        const old = data.combinedDraftTask;
+        const libraries = old.parts.map(part => data.libraries.find(lib => lib.libraryId === part.libraryId)).filter(Boolean);
+        const task = planCombinedTask(libraries, false);
+        if (task.taskWordIds.length > DAILY_MAX_WORDS) { alert("合并后超过 60 个词，请先调整学习计划。"); return; }
+        task.date = old.date;
+        stopAutoPlay();
+        data.combinedDraftTask = task;
+        dictationIndex = 0;
+        saveData();
+        renderTodayView("player");
+        return;
+      }
       const lib = getCurrentLibrary();
       if (!lib || !lib.currentDraftTask) return;
       if (!options.skipConfirm) {
@@ -3014,6 +3167,23 @@
     }
 
     function submitTodayResult() {
+      if (data.combinedDraftTask) {
+        const task = data.combinedDraftTask;
+        const checked = Array.from(document.querySelectorAll("[data-wrong-check]:checked")).map(input => input.value);
+        try {
+          const summaries = saveCombinedResult(task, checked);
+          todaySummary = { combined: true, task, checked, summaries };
+          stopAutoPlay();
+          dictationIndex = 0;
+          renderTodayView("summary");
+          if (window.cloudSync?.autoUploadAfterDictation) window.cloudSync.autoUploadAfterDictation();
+          else {
+            const status = document.getElementById("autoCloudUploadStatus");
+            if (status) status.textContent = "本场结果已分别保存到各词库。当前未登录云端。";
+          }
+        } catch (error) { alert(error.message); }
+        return;
+      }
       const lib = getCurrentLibrary();
       const task = lib.currentDraftTask;
       if (!task) return;
@@ -3561,6 +3731,7 @@
         imported.libraryName = imported.libraryName + "（导入）";
         data.libraries.push(imported);
         data.activeLibraryId = imported.libraryId;
+        if (!data.combinedDraftTask) data.studyLibraryIds = [imported.libraryId];
       }
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
@@ -3946,11 +4117,93 @@
       });
     }
 
+    function renderCombinedTodayView(mode = null) {
+      const app = document.getElementById("app");
+      if (todaySummary?.combined) {
+        const summary = todaySummary;
+        const wrongCount = summary.checked.length;
+        const total = summary.task.taskWordIds.length;
+        app.innerHTML = `<div class="grid">
+          <section class="card span-12"><h2>多词库听写总结</h2>
+            <div class="success">本场 ${total} 个词，正确 ${total - wrongCount} 个，错误 ${wrongCount} 个。已分别保存到各词库。</div>
+            <div id="autoCloudUploadStatus" class="notice small" aria-live="polite">本场已保存到本机，正在检查云端登录状态...</div>
+          </section>
+          ${summary.summaries.map(item => `<section class="card span-12"><h3>${escapeHtml(item.libraryName)} · Day ${item.dayNumber}</h3>
+            <p>本库 ${item.total} 个，错误 ${item.wrong} 个；下一次 Day ${getNextDayNumber(data.libraries.find(lib => lib.libraryId === item.libraryId))}。</p>
+            ${renderLatestResultWrongWords(data.libraries.find(lib => lib.libraryId === item.libraryId), item)}
+            <button class="secondary" data-combined-export="${escapeHtml(item.libraryId)}">导出本库本次错词</button>
+          </section>`).join("")}
+          <section class="card span-12"><button id="newTaskAfterSummary">返回今日听写</button></section>
+          ${renderStudyPlanSection(getCurrentLibrary(), "summary")}
+        </div>`;
+        document.getElementById("newTaskAfterSummary").onclick = () => { todaySummary = null; renderTodayView(); };
+        document.querySelectorAll("[data-combined-export]").forEach(button => {
+          button.onclick = () => {
+            const lib = data.libraries.find(item => item.libraryId === button.dataset.combinedExport);
+            const result = summary.summaries.find(item => item.libraryId === lib.libraryId);
+            exportWrongWordsXlsx(lib, lib.dailyRecords.find(record => record.recordId === result.recordId), "本次没有错词可导出。");
+          };
+        });
+        bindStudyPlanEvents("summary");
+        return;
+      }
+      const task = data.combinedDraftTask;
+      const libraries = task
+        ? task.parts.map(part => data.libraries.find(lib => lib.libraryId === part.libraryId)).filter(Boolean)
+        : getStudyLibraries();
+      const preview = task || planCombinedTask(libraries);
+      const counts = getTaskCategoryCounts(preview);
+      const overflow = counts.total > DAILY_MAX_WORDS;
+      const activeMode = mode || task?.mode || "intro";
+      if (task) {
+        task.mode = activeMode;
+        dictationIndex = Math.min(task.currentIndex || 0, Math.max(0, task.taskWordIds.length - 1));
+        saveData();
+      }
+      const lib = getDictationLibrary();
+      app.innerHTML = `<div class="grid">
+        <section class="card span-12"><h2>多词库听写</h2>
+          <p>${libraries.length ? libraries.map(item => escapeHtml(item.libraryName)).join(" + ") : "请在学习计划中勾选词库"}</p>
+          <label>本次记录日期 <input id="taskDateInput" type="date" value="${escapeHtml(task?.date || todayDate())}"></label>
+          ${task ? '<button class="secondary" id="exportTodayTaskBtn">导出合并听写纸</button><button class="secondary" id="regenerateTaskBtn">按当前设置重新生成</button>' : ""}
+          ${task && activeMode === "mark" ? '<button class="secondary" id="backToCombinedPlayerBtn">返回播放</button>' : ""}
+        </section>
+        <section class="card span-12"><h3>${task ? "本场任务" : "任务预览"}</h3>
+          ${preview.parts.map(part => {
+            const c = getTaskCategoryCounts(part.task);
+            return `<p><strong>${escapeHtml(part.libraryName)}</strong> · Day ${part.task.dayNumber}：新词 ${c.new} · 错词池 ${c.wrong} · 复查 ${c.review}（自动补充 ${(part.task.supplementReviewWordIds || []).length}） · 共 ${c.total} 个${c.total ? "" : "，本次不推进 Day"}</p>`;
+          }).join("")}
+          <div class="notice">合并去重后：新词 ${counts.new} · 错词池 ${counts.wrong} · 错词复查 ${counts.review} · <strong>合计 ${counts.total} 个</strong>。${preview.parts.reduce((sum, part) => sum + part.task.taskWordIds.length, 0) > counts.total ? "跨库重复英文只听写一次。" : ""}</div>
+          ${overflow ? '<div class="notice">超过整场 60 个上限，请在学习计划中调整各库数量后再开始。</div>' : ""}
+          ${!task ? `<button id="startDictationBtn" ${overflow || !counts.total ? "disabled" : ""}>生成 / 开始合并听写</button>` : ""}
+        </section>
+        ${task ? (activeMode === "mark" ? renderMarkWrongPanel(lib, task) : renderPlayerPanel(lib, task)) : ""}
+        ${renderStudyPlanSection(getCurrentLibrary(), activeMode)}
+      </div>`;
+      bindStudyPlanEvents(activeMode);
+      if (task) {
+        bindTaskDateInput(lib, task);
+        document.getElementById("exportTodayTaskBtn").onclick = () => exportDictationPaperXlsx(lib, task);
+        document.getElementById("regenerateTaskBtn").onclick = () => regenerateTodayTaskFromSettings();
+        const backButton = document.getElementById("backToCombinedPlayerBtn");
+        if (backButton) backButton.onclick = () => renderTodayView("player");
+        bindPlayerEvents(lib, task);
+        bindSubmitEvents();
+      } else if (document.getElementById("startDictationBtn")) {
+        document.getElementById("startDictationBtn").onclick = startDictation;
+      }
+    }
+
     function renderTodayView(mode = null) {
+      if (data.combinedDraftTask || todaySummary?.combined || getStudyLibraries().length !== 1) {
+        renderCombinedTodayView(mode);
+        return;
+      }
       const lib = getCurrentLibrary();
       const app = document.getElementById("app");
       const task = lib.currentDraftTask;
-      const activeMode = mode || (todaySummary ? "summary" : task ? "player" : "intro");
+      const activeMode = mode || (todaySummary ? "summary" : task ? task.mode || "player" : "intro");
+      if (task) { task.mode = activeMode; saveData(); }
       if (task && activeMode === "player") {
         dictationIndex = Math.min(Number(task.currentIndex || 0), Math.max(0, task.taskWordIds.length - 1));
       }
@@ -4063,7 +4316,7 @@
     }
 
     function saveCurrentDictationIndex() {
-      const lib = getCurrentLibrary();
+      const lib = getDictationLibrary();
       const task = lib?.currentDraftTask;
       if (!task) return;
       task.currentIndex = Math.max(0, Number(dictationIndex || 0));
@@ -4073,10 +4326,7 @@
     // ── 学习计划（由原「设置」页迁移到今日听写页）────────────────────────────────
     // 迁移原因：学习计划决定的就是"下一次听写听多少词"，放在独立的设置页时，改完必须
     // 回到今日页、再手动点一次"按当前设置重新生成"才生效，用户会误以为改动没起作用。
-    // 放到今日页后按下面的规则即时生效：
-    //   - 任务还没生成：直接刷新预计数量（renderNoTaskPanel 每次都会重新计算）
-    //   - 任务已生成但一个词都没答：静默重算，不打断
-    //   - 已经开始答题（currentIndex > 0）或已进入统一标记页：先弹窗确认，避免默默丢进度
+    // 每库设置分别保存并刷新预览；已有任务时，确认清空进度后才应用计划变更。
     // studyPlanOpen 记住用户手动展开/收起的选择，因为改动设置会触发 renderApp() 整页重绘。
     let studyPlanOpen = null;
 
@@ -4091,19 +4341,31 @@
     }
 
     function renderStudyPlanSection(lib, activeMode) {
+      const selected = new Set(getStudyLibraries().map(item => item.libraryId));
+      return `<section class="card span-12 collapsible-section study-plan-section${isStudyPlanOpen(activeMode) ? " is-open" : ""}">
+        <button class="section-toggle" type="button"><div class="section-toggle-info">
+          <span class="section-toggle-title">学习计划</span>
+          <span class="section-toggle-desc">勾选词库，分别设置数量，合并听写</span>
+        </div><span class="section-toggle-arrow">▾</span></button>
+        <div class="section-body">
+          ${data.libraries.map(item => `<div data-study-library="${escapeHtml(item.libraryId)}" class="study-library-plan">
+            <label class="checkbox-row"><input type="checkbox" data-study-select="${escapeHtml(item.libraryId)}" ${selected.has(item.libraryId) ? "checked" : ""}>
+              <strong>${escapeHtml(item.libraryName)}</strong> · Day ${getNextDayNumber(item)}${item.currentDraftTask ? " · 有未完成任务" : ""}</label>
+            <fieldset ${selected.has(item.libraryId) ? "" : "disabled"} style="border:0;padding:0;margin:12px 0">
+              ${renderSingleStudyPlanSection(item, activeMode)}
+            </fieldset>
+          </div>`).join("")}
+          <label>多词库播放顺序 <select id="studyPlayOrder"><option value="ordered" ${data.studyPlayOrder !== "random" ? "selected" : ""}>按词库顺序</option><option value="random" ${data.studyPlayOrder === "random" ? "selected" : ""}>全部随机混排</option></select></label>
+          <div class="small muted">各词库独立推进学习 Day。跨库相同英文只听写一次，对错分别计入本场出题的词库；整场最多 60 个，超过时请先调整数量。</div>
+        </div></section>`;
+    }
+
+    function renderSingleStudyPlanSection(lib, activeMode) {
       if (!lib || !lib.words.length) return "";
       const s = lib.settings;
       const started = isDictationStarted(lib.currentDraftTask, activeMode);
       return `
-        <section class="card span-12 collapsible-section study-plan-section${isStudyPlanOpen(activeMode) ? " is-open" : ""}">
-          <button class="section-toggle" type="button">
-            <div class="section-toggle-info">
-              <span class="section-toggle-title">学习计划</span>
-              <span class="section-toggle-desc">只影响当前词库，改完立即用于下一次听写</span>
-            </div>
-            <span class="section-toggle-arrow">▾</span>
-          </button>
-          <div class="section-body">
+        <div>
             <div class="settings-plan-grid">
               <label>当天新词数
                 <input data-plan-setting="dailyTargetWords" type="number" min="0" max="100" step="5" value="${escapeHtml(s.dailyTargetWords ?? 30)}">
@@ -4134,14 +4396,13 @@
             <div class="notice small">${started
               ? "今日任务已经开始答题，修改后会先询问是否按新计划重新生成。"
               : "修改后立即生效，用于下一次生成的听写任务。"}</div>
-          </div>
-        </section>
+        </div>
       `;
     }
 
-    function collectStudyPlanUpdates() {
+    function collectStudyPlanUpdates(root = document) {
       const updates = {};
-      document.querySelectorAll("[data-plan-setting]").forEach(input => {
+      root.querySelectorAll("[data-plan-setting]").forEach(input => {
         const key = input.dataset.planSetting;
         if (input.type === "checkbox") updates[key] = input.checked;
         else updates[key] = Number(input.value);
@@ -4157,24 +4418,31 @@
     }
 
     async function handleStudyPlanChange(activeMode) {
-      const lib = getCurrentLibrary();
-      if (!lib) return;
-      const started = isDictationStarted(lib.currentDraftTask, activeMode);
-      if (started) {
-        const ok = await requestAppConfirmation(
-          "学习计划已修改。今日任务已经开始答题，按新计划重新生成会清空当前的答题进度。确定重新生成吗？"
-        );
-        // 用户放弃：重绘把表单恢复成已保存的值，不写入任何改动
-        if (!ok) {
-          renderApp();
-          return;
-        }
+      const section = document.querySelector(".study-plan-section");
+      const selectedIds = Array.from(section.querySelectorAll("[data-study-select]:checked")).map(input => input.dataset.studySelect);
+      const affected = new Set([...selectedIds, ...getStudyLibraries().map(lib => lib.libraryId)]);
+      const hasDraft = data.combinedDraftTask || data.libraries.some(lib => affected.has(lib.libraryId) && lib.currentDraftTask);
+      if (hasDraft && !await requestAppConfirmation("修改计划会清空相关未完成任务的播放进度和错词勾选，返回任务预览。确定继续吗？")) {
+        renderApp();
+        return;
       }
-      const hadTask = Boolean(lib.currentDraftTask);
-      // updateLibrarySettings 内部会 saveData + 触发自动上传 + renderApp()，
-      // 没有生成任务时这一步就已经让"预计词数"跟着新计划刷新了。
-      updateLibrarySettings(collectStudyPlanUpdates());
-      if (hadTask) await regenerateTodayTaskFromSettings({ skipConfirm: true });
+      stopAutoPlay();
+      section.querySelectorAll("[data-study-library]").forEach(root => {
+        const lib = data.libraries.find(item => item.libraryId === root.dataset.studyLibrary);
+        if (!lib || !selectedIds.includes(lib.libraryId)) return;
+        Object.assign(lib.settings, collectStudyPlanUpdates(root));
+        lib.updatedAt = nowIso();
+      });
+      data.libraries.forEach(lib => { if (affected.has(lib.libraryId)) lib.currentDraftTask = null; });
+      data.studyLibraryIds = selectedIds;
+      data.studyPlayOrder = section.querySelector("#studyPlayOrder").value;
+      data.combinedDraftTask = null;
+      if (selectedIds.length === 1) data.activeLibraryId = selectedIds[0];
+      todaySummary = null;
+      dictationIndex = 0;
+      saveData();
+      window.cloudSync?.requestAutoUploadLocalData?.("settings-changed");
+      renderApp();
     }
 
     function bindStudyPlanEvents(activeMode) {
@@ -4188,7 +4456,7 @@
         };
       }
       // 用 change 而不是 input：数字框在输入过程中不会被整页重绘打断，失焦/回车才提交
-      section.querySelectorAll("[data-plan-setting]").forEach(input => {
+      section.querySelectorAll("[data-plan-setting], [data-study-select], #studyPlayOrder").forEach(input => {
         input.onchange = () => handleStudyPlanChange(activeMode);
       });
     }
@@ -4267,6 +4535,7 @@
           <div class="player">
             <div class="player-progress-area">
               <div class="progress-big">第 ${dictationIndex + 1} / ${total} 个</div>
+              ${currentWord?.references ? '<div class="small muted">所属词库：' + escapeHtml([...new Set(currentWord.references.map(ref => ref.libraryName))].join("、")) + '</div>' : ""}
               <button id="goMarkBtn" class="player-go-mark-btn">全部播放完成，进入标记错误</button>
             </div>
             <button class="ghost player-settings-toggle" id="togglePlayerSettingsBtn" type="button">语速与声音</button>
@@ -4347,6 +4616,7 @@
                   <th>英文</th>
                   <th>中文释义</th>
                   <th>来源</th>
+                  ${task.parts ? "<th>所属词库</th>" : ""}
                 </tr>
               </thead>
               <tbody>
@@ -4355,11 +4625,12 @@
                   const sources = task.sourceMap[id] || ["new"];
                   return `
                     <tr>
-                      <td><input type="checkbox" data-wrong-check value="${escapeHtml(id)}"></td>
+                      <td><input type="checkbox" data-wrong-check value="${escapeHtml(id)}" ${(task.checkedWrongWordIds || []).includes(id) ? "checked" : ""}></td>
                       <td>${word ? word.index + 1 : "-"}</td>
                       <td class="word-cell">${escapeHtml(word?.word || id)}</td>
                       <td>${escapeHtml(word?.meaning || "")}</td>
                       <td>${sourceTagHtml(sources)}</td>
+                      ${task.parts ? '<td>' + escapeHtml([...new Set((word?.references || []).map(ref => ref.libraryName))].join("、")) + '</td>' : ""}
                     </tr>
                   `;
                 }).join("")}
@@ -4487,12 +4758,21 @@
     function bindSubmitEvents() {
       const submitButton = document.getElementById("submitResultBtn");
       if (submitButton) submitButton.onclick = async () => {
-        const ok = await requestAppConfirmation("确定提交今日结果吗？提交后会计入一个学习 Day。");
+        const ok = await requestAppConfirmation(data.combinedDraftTask
+          ? "确定提交本场结果吗？本次有出题的词库将分别计入各自的一个学习 Day。"
+          : "确定提交今日结果吗？提交后会计入一个学习 Day。");
         if (ok) submitTodayResult();
       };
       const wrongChecks = document.querySelectorAll("[data-wrong-check]");
       if (wrongChecks.length) {
-        const update = () => renderSelectedWrongSummary(getCurrentLibrary());
+        const update = () => {
+          const lib = getDictationLibrary();
+          if (lib?.currentDraftTask) {
+            lib.currentDraftTask.checkedWrongWordIds = Array.from(document.querySelectorAll("[data-wrong-check]:checked")).map(input => input.value);
+            saveData();
+          }
+          renderSelectedWrongSummary(lib);
+        };
         wrongChecks.forEach(input => input.addEventListener("change", update));
         update();
       }
@@ -4526,7 +4806,7 @@
     }
 
     function startAutoPlay(intervalSeconds = null, repeatTimesValue = null) {
-      const lib = getCurrentLibrary();
+      const lib = getDictationLibrary();
       const task = lib.currentDraftTask;
       if (!task) return;
       stopAutoPlay();
@@ -4583,7 +4863,7 @@
     }
 
     function playAdjacentFromKeyboard(direction) {
-      const lib = getCurrentLibrary();
+      const lib = getDictationLibrary();
       const task = lib?.currentDraftTask;
       if (viewName !== "today" || todaySummary || !task || !task.taskWordIds?.length) return;
       const nextIndex = dictationIndex + direction;
@@ -4598,7 +4878,7 @@
       saveCurrentDictationIndex();
       renderTodayView("player");
       setTimeout(() => {
-        const nextLib = getCurrentLibrary();
+        const nextLib = getDictationLibrary();
         const nextTask = nextLib?.currentDraftTask;
         const nextId = nextTask?.taskWordIds?.[dictationIndex];
         const nextWord = nextId ? getWordById(nextLib, nextId) : null;
@@ -5920,7 +6200,7 @@
         const startCol = isRightColumn ? 5 : 1;
         fillDictationPaperWord(sheet, rowIndex, startCol, word, rowsPerColumn);
       });
-      await downloadWorkbook(workbook, "听写纸-Day" + task.dayNumber + "-" + exportDate + ".xlsx");
+      await downloadWorkbook(workbook, "听写纸-" + (task.parts ? "多词库" : "Day" + task.dayNumber) + "-" + exportDate + ".xlsx");
     }
 
     function exportWrongWordsToCsv(lib, words, label) {
