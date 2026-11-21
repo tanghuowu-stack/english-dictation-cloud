@@ -2529,15 +2529,14 @@
         lib.dailyRecords = [];
         lib.currentDraftTask = null;
       }
-      const existing = new Set(lib.words.map(word => getWordDuplicateKey(word.word, word.meaning)));
+      const existing = new Set(lib.words.map(word => normalizeWord(word.word)));
       const usedIds = new Set(lib.words.map(word => word.id));
       let nextOriginalNo = getNextOriginalNo(lib);
       let added = 0;
       let skipped = 0;
       parsed.forEach(item => {
-        const normalized = normalizeWordForDuplicate(item.word);
-        const duplicateKey = getWordDuplicateKey(item.word, item.meaning);
-        if (!normalized || existing.has(duplicateKey)) {
+        const normalized = normalizeWord(item.word);
+        if (!normalized || existing.has(normalized)) {
           skipped += 1;
           return;
         }
@@ -2546,7 +2545,7 @@
         word.originalNo = nextOriginalNo;
         nextOriginalNo += 1;
         lib.words.push(word);
-        existing.add(duplicateKey);
+        existing.add(normalized);
         usedIds.add(word.id);
         added += 1;
       });
