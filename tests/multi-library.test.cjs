@@ -9,7 +9,7 @@ const source = html.slice(html.indexOf('  <script>') + '  <script>'.length, html
 function app() {
   const storage = new Map();
   const env = vm.createContext({
-    console, setTimeout: () => 0, clearTimeout() {},
+    console, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: () => 0, scrollTo() {},
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
     document: { getElementById: () => null, querySelectorAll: () => [], querySelector: () => null }, window: {}
   });
@@ -24,7 +24,8 @@ function app() {
     handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
     stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
     switchLibrary, createLibrary, deleteLibrary, replaceLocalDictationDataFromCloud, undoLatestDailyRecord,
-    getCombinedPreview, combinedOverflowMessage,
+    getCombinedPreview, combinedOverflowMessage, getWrongBookLibraries, parseWrongBookKey, manualUpdateWrongPool,
+    setWrongBookScope: value => { wrongBookScope = value; },
     stubCloudDelete: calls => { window.cloudSync = { deleteSessionAndSync: async (libraryId, id) => { calls.push([libraryId, id]); } }; },
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
@@ -580,4 +581,49 @@ test('over-60 message explains when the wrong pool alone is too large', () => {
   libs.forEach(lib => lib.words.forEach(word => { word.isPendingWrong = false; word.firstLearnDay = null; word.wrongCount = 0; }));
   libs.forEach(lib => { lib.settings.dailyTargetWords = 40; });
   assert.match(api.combinedOverflowMessage(api.planCombinedTask(libs)), /调小各词库的新词数/);
+});
+
+test('study plan selection travels with library settings to the cloud and back (other device adopts it)', async () => {
+  const { attachStudyPlan, extractStudyPlan, STUDY_PLAN_KEY } = await import('../src/studyPlanSync.js');
+  const local = { studyLibraryIds: ['B', 'A'], studyPlayOrder: 'random' };
+  const uploaded = ['A', 'B', 'C'].map(id => ({ libraryId: id, settings: attachStudyPlan({ dailyTargetWords: 5 }, local, id) }));
+  assert.deepEqual(uploaded[2].settings[STUDY_PLAN_KEY], { selected: false, position: null, playOrder: 'random' });
+  const plan = extractStudyPlan(uploaded);
+  assert.deepEqual(plan, { studyLibraryIds: ['B', 'A'], studyPlayOrder: 'random' });
+  assert.equal(STUDY_PLAN_KEY in uploaded[0].settings, false, 'sync field is removed from restored library settings');
+  assert.equal(extractStudyPlan([{ libraryId: 'A', settings: { dailyTargetWords: 5 } }]), null, 'old cloud data carries no plan');
+
+  // 另一台设备：本机原来是单库，云端带来了 A+B 合并，恢复后采用云端的。
+  const { api, library } = app();
+  api.setData({ version: '1.0.0', libraries: [library('A', ['a']), library('B', ['b'])], activeLibraryId: 'A', studyLibraryIds: ['A'], studyPlayOrder: 'ordered' });
+  api.replaceLocalDictationDataFromCloud(plain({ version: '1.0.0', activeLibraryId: 'A', libraries: [library('A', ['a']), library('B', ['b'])], ...plan }));
+  assert.deepEqual(plain(api.getData().studyLibraryIds), ['B', 'A']);
+  assert.equal(api.getData().studyPlayOrder, 'random');
+});
+
+test('wrong book can merge the selected libraries; actions write back to the right library by composite key', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['same', 'x']), library('B', ['other'])]);
+  libs[1].words[0].id = libs[0].words[0].id; // 不同词库里相同的单词 id
+  libs.forEach(lib => Object.assign(lib.words[0], { firstLearnDay: 1, wrongCount: 1, isPendingWrong: true }));
+  api.stubNav(); api.stubRender(); api.stubAppRender(); api.confirm(false);
+  let view = api.getWrongBookLibraries();
+  assert.equal(view.merged, true);
+  assert.deepEqual(plain(view.libraries.map(lib => lib.libraryId)), ['A', 'B']);
+  api.setWrongBookScope('current');
+  assert.equal(api.getWrongBookLibraries().merged, false);
+  api.setWrongBookScope(null);
+  const keyB = 'B::' + libs[1].words[0].id;
+  assert.equal(api.parseWrongBookKey(keyB).lib, libs[1]);
+  assert.equal(api.parseWrongBookKey(libs[0].words[0].id).lib, libs[0], 'plain id still means current library');
+  await api.batchUpdateWrongPool([keyB], false);
+  assert.equal(libs[1].words[0].isPendingWrong, false);
+  assert.equal(libs[0].words[0].isPendingWrong, true, 'same id in library A is untouched');
+  api.manualUpdateWrongPool(libs[1].words[0].id, { wrongCount: 4 }, libs[1]);
+  assert.equal(libs[1].words[0].wrongCount, 4);
+  assert.equal(libs[0].words[0].wrongCount, 1);
+  // 单库勾选时不出现合并查看。
+  api.getData().studyLibraryIds = ['A'];
+  view = api.getWrongBookLibraries();
+  assert.equal(view.merged, false);
 });

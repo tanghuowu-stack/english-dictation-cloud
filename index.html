@@ -1960,6 +1960,8 @@
     let editingRecordDay = null;
     let availableSpeechVoices = [];
     let selectedWrongBookWordIds = new Set();
+    // 错词本查看范围：null=自动（学习计划勾了多个词库时合并查看），"current"=只看当前词库，"study"=合并查看所选词库。
+    let wrongBookScope = null;
     let libraryImportExpanded = false;
     const appMessageQueue = [];
     let appMessageVisible = false;
@@ -2285,13 +2287,18 @@
     };
 
     window.replaceLocalDictationDataFromCloud = function(restoredData) {
-      // 云端只存词库、单词和记录；学习计划里勾了哪些词库、播放顺序是本机设置，云端恢复的数据里没有。
-      // 恢复时沿用本机原来的勾选和顺序，只去掉云端已经不存在的词库，避免自动同步后合并听写退回单库。
+      // 学习计划里勾了哪些词库、播放顺序：新版本上传时随词库设置一起存到云端（见 src/studyPlanSync.js），
+      // 恢复数据里带着就用云端的，实现换设备同步；旧数据里没有就沿用本机原来的。
+      // 两种情况都只保留还存在的词库，避免自动同步后合并听写退回单库。
+      const cloudSelection = Array.isArray(restoredData?.studyLibraryIds)
+        ? { ids: restoredData.studyLibraryIds, order: restoredData.studyPlayOrder }
+        : null;
       const localSelection = data ? { ids: data.studyLibraryIds, order: data.studyPlayOrder } : null;
       const result = applyAllDataImportObject(restoredData, { render: false });
-      if (localSelection) {
-        if (localSelection.order) data.studyPlayOrder = localSelection.order;
-        const ids = uniqueWordIds(localSelection.ids || []).filter(id => data.libraries.some(lib => lib.libraryId === id));
+      const selection = cloudSelection || localSelection;
+      if (selection) {
+        if (selection.order) data.studyPlayOrder = selection.order;
+        const ids = uniqueWordIds(selection.ids || []).filter(id => data.libraries.some(lib => lib.libraryId === id));
         data.studyLibraryIds = ids.length > 1 ? ids : [data.activeLibraryId];
         saveData();
       }
@@ -3880,8 +3887,8 @@
       renderQuickCalibrateTab();
     }
 
-    function manualUpdateWrongPool(wordId, updates) {
-      const lib = getCurrentLibrary();
+    function manualUpdateWrongPool(wordId, updates, lib = getCurrentLibrary()) {
+      if (!lib) return;
       const word = getWordById(lib, wordId);
       if (!word) return;
       const previousScrollTop = window.scrollY;
@@ -5184,16 +5191,42 @@
       `;
     }
 
+    // 合并查看时，同一个单词 id 可能在不同词库里各有一个，所以勾选和按钮都用“词库 id + 单词 id”作为键。
+    const WRONG_KEY_SEPARATOR = "::";
+    function wrongBookKey(word) {
+      return word.wrongBookLibraryId ? word.wrongBookLibraryId + WRONG_KEY_SEPARATOR + word.id : word.id;
+    }
+
+    function parseWrongBookKey(key) {
+      const text = String(key || "");
+      const at = text.indexOf(WRONG_KEY_SEPARATOR);
+      if (at < 0) return { lib: getCurrentLibrary(), wordId: text };
+      return { lib: data.libraries.find(item => item.libraryId === text.slice(0, at)), wordId: text.slice(at + WRONG_KEY_SEPARATOR.length) };
+    }
+
+    function getWrongBookLibraries() {
+      const study = getStudyLibraries();
+      const merged = study.length > 1 && (wrongBookScope || "study") === "study";
+      return { merged, study, libraries: merged ? study : [getCurrentLibrary()] };
+    }
+
     function renderWrongBook() {
+      const { merged, study, libraries } = getWrongBookLibraries();
       const lib = getCurrentLibrary();
       const filter = document.getElementById("wrongFilter")?.value || "pending";
       const sort = document.getElementById("wrongSort")?.value || "count";
-      const allWrongWords = lib.words.filter(word => word.wrongCount > 0 || word.isPendingWrong);
+      // 合并查看：把各词库的错词放在一起，每个词带上所属词库（只做展示用的浅拷贝，修改仍然写回原词库）。
+      const libOf = word => word.wrongBookLib || lib;
+      const allWrongWords = libraries.flatMap((source, libraryOrder) => source.words
+        .filter(word => word.wrongCount > 0 || word.isPendingWrong)
+        .map(word => merged
+          ? { ...word, wrongBookLib: source, wrongBookLibraryId: source.libraryId, wrongBookOrder: libraryOrder, libraryNames: [source.libraryName] }
+          : word));
       const wrongCounts = {
         pending: allWrongWords.filter(word => word.isPendingWrong).length,
         all: allWrongWords.length,
         scheduled: allWrongWords.filter(word => !word.isPendingWrong && getWrongReviewDueDay(word) != null).length,
-        due: allWrongWords.filter(word => !word.isPendingWrong && isWrongReviewDue(word, lib)).length,
+        due: allWrongWords.filter(word => !word.isPendingWrong && isWrongReviewDue(word, libOf(word))).length,
         focus: allWrongWords.filter(word => word.isFocus).length,
         stubborn: allWrongWords.filter(word => word.isStubborn).length
       };
@@ -5208,12 +5241,12 @@
       let words = allWrongWords.slice();
       if (filter === "pending") words = words.filter(word => word.isPendingWrong);
       if (filter === "scheduled") words = words.filter(word => !word.isPendingWrong && getWrongReviewDueDay(word) != null);
-      if (filter === "due") words = words.filter(word => !word.isPendingWrong && isWrongReviewDue(word, lib));
+      if (filter === "due") words = words.filter(word => !word.isPendingWrong && isWrongReviewDue(word, libOf(word)));
       if (filter === "focus") words = words.filter(word => word.isFocus);
       if (filter === "stubborn") words = words.filter(word => word.isStubborn);
       words.sort((a, b) => {
         if (sort === "word") return String(a.word || "").localeCompare(String(b.word || ""));
-        if (sort === "index") return a.index - b.index;
+        if (sort === "index") return (a.wrongBookOrder || 0) - (b.wrongBookOrder || 0) || a.index - b.index;
         if (sort === "first") return (a.firstLearnDay || 999999) - (b.firstLearnDay || 999999);
         if (sort === "review") return (getWrongReviewDueDay(a) ?? 999999) - (getWrongReviewDueDay(b) ?? 999999);
         if (sort === "date") return String(b.lastWrongDate || "").localeCompare(String(a.lastWrongDate || ""));
@@ -5236,6 +5269,10 @@
                     </button>
                   `).join("")}
                 </div>
+                ${study.length > 1 ? `<div class="wrong-scope-switch row" role="group" aria-label="错词本查看范围">
+                  <button type="button" class="${merged ? "" : "ghost"}" data-wrong-scope="study">合并查看：${study.map(item => escapeHtml(item.libraryName)).join(" + ")}</button>
+                  <button type="button" class="${merged ? "ghost" : ""}" data-wrong-scope="current">只看当前词库：${escapeHtml(lib.libraryName)}</button>
+                </div>` : ""}
                 <div class="wrong-rule-hint">自动规则：第一轮累计错误 3 次标记为重点；到期复查时再次写错才标记为顽固。手动设置的状态优先。</div>
               </div>
               <div class="wrong-book-controls">
@@ -5270,7 +5307,7 @@
           </section>
           <section class="card span-12">
             ${renderWrongBulkToolbar(words)}
-            ${renderWrongTable(lib, words)}
+            ${renderWrongTable(lib, words, merged)}
           </section>
         </div>
       `;
@@ -5281,6 +5318,13 @@
         renderWrongBook();
       };
       document.getElementById("wrongSort").onchange = renderWrongBook;
+      document.querySelectorAll("[data-wrong-scope]").forEach(button => {
+        button.onclick = () => {
+          wrongBookScope = button.dataset.wrongScope;
+          selectedWrongBookWordIds.clear();
+          renderWrongBook();
+        };
+      });
       document.querySelectorAll("[data-wrong-filter-chip]").forEach(button => {
         button.onclick = () => {
           selectedWrongBookWordIds.clear();
@@ -5295,7 +5339,7 @@
       };
       document.getElementById("exportWrongWordsBtn").onclick = () => {
         const exportLabels = { all: "全部", pending: "当前错词池", scheduled: "待复查", due: "今日到期", focus: "重点", stubborn: "顽固" };
-        exportWrongWordsToCsv(lib, words, exportLabels[filter] || "错词");
+        exportWrongWordsToCsv(merged ? { libraryName: "多词库" } : lib, words, exportLabels[filter] || "错词");
       };
       bindWrongActions(words);
     }
@@ -5311,7 +5355,7 @@
     }
 
     function renderWrongBulkToolbar(words) {
-      const visibleIds = new Set(words.map(word => word.id));
+      const visibleIds = new Set(words.map(wrongBookKey));
       const selectedVisibleCount = Array.from(selectedWrongBookWordIds).filter(id => visibleIds.has(id)).length;
       return `
         <div class="wrong-bulk-toolbar">
@@ -5327,7 +5371,7 @@
       `;
     }
 
-    function renderWrongTable(lib, words) {
+    function renderWrongTable(lib, words, merged = false) {
       if (!words.length) return '<div class="empty">当前筛选下没有错词。</div>';
       return `
         <div class="table-wrap table-card-layout">
@@ -5347,10 +5391,10 @@
             <tbody>
               ${words.map(word => `
                 <tr>
-                  <td data-label="选择" class="wrong-select-cell"><input type="checkbox" data-wrong-book-select="${escapeHtml(word.id)}" ${selectedWrongBookWordIds.has(word.id) ? "checked" : ""}></td>
+                  <td data-label="选择" class="wrong-select-cell"><input type="checkbox" data-wrong-book-select="${escapeHtml(wrongBookKey(word))}" ${selectedWrongBookWordIds.has(wrongBookKey(word)) ? "checked" : ""}></td>
                   <td data-label="英文" class="word-cell">${escapeHtml(word.word)}</td>
-                  <td data-label="中文释义">${escapeHtml(word.meaning || "")}</td>
-                  <td data-label="错误次数"><input style="width:80px" type="number" min="0" data-wrong-count="${escapeHtml(word.id)}" value="${word.wrongCount}"></td>
+                  <td data-label="中文释义">${escapeHtml(word.meaning || "")}${merged ? libraryTagHtml(word) : ""}</td>
+                  <td data-label="错误次数"><input style="width:80px" type="number" min="0" data-wrong-count="${escapeHtml(wrongBookKey(word))}" value="${word.wrongCount}"></td>
                   <td data-label="状态">
                     ${word.isPendingWrong ? '<span class="tag wrong">当前错词池</span>' : '<span class="tag">历史错词</span>'}
                     ${word.isFocus ? '<span class="tag review">重点</span>' : ''}
@@ -5360,8 +5404,8 @@
                   <td data-label="错词复查">${renderReviewStatus(word)}</td>
                   <td data-label="" class="actions-cell">
                     <div class="row">
-                      <button class="secondary" data-toggle-pending="${escapeHtml(word.id)}" title="移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。">${word.isPendingWrong ? "移出错词池" : "加入错词池"}</button>
-                      <button class="ghost" data-toggle-focus="${escapeHtml(word.id)}">${word.isFocus ? "取消重点" : "设为重点"}</button>
+                      <button class="secondary" data-toggle-pending="${escapeHtml(wrongBookKey(word))}" title="移出错词池后，这个词不再每天强制复习，但历史错误次数仍保留。">${word.isPendingWrong ? "移出错词池" : "加入错词池"}</button>
+                      <button class="ghost" data-toggle-focus="${escapeHtml(wrongBookKey(word))}">${word.isFocus ? "取消重点" : "设为重点"}</button>
                     </div>
                   </td>
                 </tr>
@@ -5383,8 +5427,7 @@
     }
 
     function bindWrongActions(visibleWords = []) {
-      const lib = getCurrentLibrary();
-      const visibleIds = new Set(visibleWords.map(word => word.id));
+      const visibleIds = new Set(visibleWords.map(wrongBookKey));
       const checkboxes = Array.from(document.querySelectorAll("[data-wrong-book-select]"));
       const selectAll = document.getElementById("selectAllFilteredWrong");
       const selectedCount = document.getElementById("wrongBulkSelectedCount");
@@ -5426,58 +5469,80 @@
       }
       document.querySelectorAll("[data-toggle-pending]").forEach(button => {
         button.onclick = () => {
-          const word = getWordById(lib, button.dataset.togglePending);
-          manualUpdateWrongPool(word.id, { isPendingWrong: !word.isPendingWrong });
+          const { lib, wordId } = parseWrongBookKey(button.dataset.togglePending);
+          const word = getWordById(lib, wordId);
+          if (word) manualUpdateWrongPool(word.id, { isPendingWrong: !word.isPendingWrong }, lib);
         };
       });
       document.querySelectorAll("[data-toggle-focus]").forEach(button => {
         button.onclick = () => {
-          const word = getWordById(lib, button.dataset.toggleFocus);
-          manualUpdateWrongPool(word.id, { manualFocus: !word.isFocus });
+          const { lib, wordId } = parseWrongBookKey(button.dataset.toggleFocus);
+          const word = getWordById(lib, wordId);
+          if (word) manualUpdateWrongPool(word.id, { manualFocus: !word.isFocus }, lib);
         };
       });
       document.querySelectorAll("[data-wrong-count]").forEach(input => {
-        input.onchange = () => manualUpdateWrongPool(input.dataset.wrongCount, { wrongCount: input.value });
+        input.onchange = () => {
+          const { lib, wordId } = parseWrongBookKey(input.dataset.wrongCount);
+          manualUpdateWrongPool(wordId, { wrongCount: input.value }, lib);
+        };
       });
       refreshSelectionUi();
     }
 
     async function batchUpdateWrongPool(wordIds, isPendingWrong) {
-      const lib = getCurrentLibrary();
-      const ids = uniqueWordIds(wordIds || []);
-      if (!ids.length) return;
+      // 键可能是普通单词 id（当前词库），也可能是合并查看时的“词库 id + 单词 id”。
+      const groups = new Map();
+      uniqueWordIds(wordIds || []).forEach(key => {
+        const { lib, wordId } = parseWrongBookKey(key);
+        if (!lib || !wordId) return;
+        if (!groups.has(lib)) groups.set(lib, []);
+        groups.get(lib).push(wordId);
+      });
+      if (!groups.size) return;
       let changedCount = 0;
-      ids.forEach(id => {
-        const word = getWordById(lib, id);
-        if (!word || word.isPendingWrong === isPendingWrong) return;
-        if (isPendingWrong && getWrongReviewDueDay(word) != null) {
-          word.manualReviewPracticePending = true;
-        } else if (!isPendingWrong) {
-          word.manualReviewPracticePending = false;
+      const changedLibs = [];
+      groups.forEach((ids, lib) => {
+        let libChanged = 0;
+        uniqueWordIds(ids).forEach(id => {
+          const word = getWordById(lib, id);
+          if (!word || word.isPendingWrong === isPendingWrong) return;
+          if (isPendingWrong && getWrongReviewDueDay(word) != null) {
+            word.manualReviewPracticePending = true;
+          } else if (!isPendingWrong) {
+            word.manualReviewPracticePending = false;
+          }
+          word.isPendingWrong = isPendingWrong;
+          if (isPendingWrong && word.wrongCount === 0) {
+            word.wrongCount = 1;
+            word.lastWrongDay = word.lastWrongDay || Math.max(1, getNextDayNumber(lib) - 1);
+            word.lastWrongDate = word.lastWrongDate || todayDate();
+          }
+          applyWrongFlags(word);
+          libChanged += 1;
+        });
+        if (libChanged) {
+          lib.updatedAt = new Date().toISOString();
+          changedLibs.push(lib);
+          changedCount += libChanged;
         }
-        word.isPendingWrong = isPendingWrong;
-        if (isPendingWrong && word.wrongCount === 0) {
-          word.wrongCount = 1;
-          word.lastWrongDay = word.lastWrongDay || Math.max(1, getNextDayNumber(lib) - 1);
-          word.lastWrongDate = word.lastWrongDate || todayDate();
-        }
-        applyWrongFlags(word);
-        changedCount += 1;
       });
       if (!changedCount) {
         alert(isPendingWrong ? "所选单词已经都在错词池中。" : "所选单词已经都不在错词池中。");
         return;
       }
-      lib.updatedAt = new Date().toISOString();
       saveData();
       selectedWrongBookWordIds.clear();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData(isPendingWrong ? "wrong-pool-batch-add" : "wrong-pool-batch-remove");
       }
-      if (data.combinedDraftTask?.parts.some(part => part.libraryId === lib.libraryId)) {
-        const refreshed = await applyCombinedRefresh({ confirmText: "已更新 " + changedCount + " 个词的错词池状态。“" + lib.libraryName + "”正在一场合并听写里，是否把最新错词池更新到本场？已勾选的错词会保留，不会增加 Day，也不会写入记录。" });
+      const inCombined = changedLibs.filter(lib => data.combinedDraftTask?.parts.some(part => part.libraryId === lib.libraryId));
+      const current = getCurrentLibrary();
+      if (inCombined.length) {
+        const names = inCombined.map(lib => "“" + lib.libraryName + "”").join("、");
+        const refreshed = await applyCombinedRefresh({ confirmText: "已更新 " + changedCount + " 个词的错词池状态。" + names + "正在一场合并听写里，是否把最新错词池更新到本场？已勾选的错词会保留，不会增加 Day，也不会写入记录。" });
         if (refreshed) return;
-      } else if (lib.currentDraftTask) {
+      } else if (changedLibs.length === 1 && changedLibs[0] === current && current.currentDraftTask) {
         const rebuild = await requestAppConfirmation("已更新 " + changedCount + " 个词的错词池状态。今日任务已经生成，是否按最新错词池重新生成今日任务？这不会增加 Day，也不会写入记录。");
         if (rebuild) {
           viewName = "today";
@@ -6438,11 +6503,14 @@
         alert("当前筛选下没有可导出的错词。");
         return;
       }
+      // 合并查看导出时多一列“词库”，否则不同词库的同名词分不清。
+      const withLibrary = words.some(word => Array.isArray(word.libraryNames));
       const rows = [[
-        "原序号", "中文释义", "英文", "来源", "累计错误次数"
+        ...(withLibrary ? ["词库"] : []), "原序号", "中文释义", "英文", "来源", "累计错误次数"
       ]];
       words.forEach((word, index) => {
         rows.push([
+          ...(withLibrary ? [(word.libraryNames || []).join("、")] : []),
           getWordOriginalNo(word, index),
           word.meaning || "",
           word.word,

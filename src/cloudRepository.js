@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient.js";
+import { attachStudyPlan, extractStudyPlan } from "./studyPlanSync.js";
 
 function requireCloudClient() {
   if (!supabase) throw new Error("云端未配置，当前使用本地模式");
@@ -272,7 +273,8 @@ export async function uploadLocalDataToCloud(localData) {
         pause_new_words: Boolean(settings.pauseNewWords),
         speech_rate: numberOrNull(settings.speechRate) ?? 0.9,
         speech_voice: settings.speechVoiceName || null,
-        settings_json: settings,
+        // 合并听写的勾选和播放顺序也随词库设置一起存，换设备时能恢复。
+        settings_json: attachStudyPlan(settings, localData, localLibraryId),
         updated_at: new Date().toISOString()
       }, { onConflict: "user_id,library_id" });
       if (error) throw error;
@@ -946,6 +948,8 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0", pre
   });
 
   result.libraries = restoredLibraries.length;
+  // 取出随词库设置一起存的合并听写勾选；旧数据里没有就不带，恢复时沿用本机设置。
+  const studyPlan = extractStudyPlan(restoredLibraries.map(lib => ({ libraryId: lib.libraryId, settings: lib.settings })));
   // Fix R4：自动拉取不应该把用户当前正在看的词库切换成云端返回的第一个词库。
   // 只要本机当前激活的词库在恢复结果里仍然存在，就保持它继续激活；只有在它已经不存在时
   // （比如那个词库被删了）才退回到第一个词库。
@@ -954,7 +958,8 @@ export async function downloadCloudDataForLocalStorage(appVersion = "1.0.0", pre
   result.restoredData = {
     version: appVersion || "1.0.0",
     activeLibraryId: preferredStillExists ? preferredActiveLibraryLocalId : (restoredLibraries[0]?.libraryId || null),
-    libraries: restoredLibraries
+    libraries: restoredLibraries,
+    ...(studyPlan || {})
   };
   return result;
 }
