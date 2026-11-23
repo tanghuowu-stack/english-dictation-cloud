@@ -23,6 +23,7 @@ function app() {
     stubExcel: (excel, download) => { requireExcelJs = () => excel; downloadWorkbook = download; },
     handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
     stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
+    switchLibrary, createLibrary, deleteLibrary,
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
     stubAppRender: () => { renderApp = () => {}; },
@@ -395,4 +396,28 @@ test('batch wrong-pool update on a library in the combined session offers refres
   assert.equal(next.entries.some(entry => entry.word === 'dog'), true);
   assert.equal(next.checkedWrongWordIds.length, 1);
   assert.match(api.queuedMessages().join('\n'), /新加入：dog/);
+});
+
+test('switching, creating or deleting libraries keeps a multi-library selection; single selection still follows the active library', async () => {
+  const { api, library, setup } = app();
+  setup([library('A', ['a']), library('B', ['b']), library('C', ['c'])]);
+  api.stubAppRender(); api.confirm(true);
+  const data = api.getData();
+  data.studyLibraryIds = ['A', 'B'];
+  api.switchLibrary('C');
+  assert.equal(data.activeLibraryId, 'C');
+  assert.deepEqual(plain(data.studyLibraryIds), ['A', 'B']);
+  assert.deepEqual(plain(api.getStudyLibraries().map(lib => lib.libraryId)), ['A', 'B']);
+  const created = api.createLibrary('D', false);
+  assert.equal(data.activeLibraryId, created.libraryId);
+  assert.deepEqual(plain(data.studyLibraryIds), ['A', 'B']);
+  // 删掉勾选里的一个词库后只剩一个：回到单库模式，跟着当前词库。
+  data.studyLibraryIds = ['A', 'B', 'C'];
+  await api.deleteLibrary('C');
+  assert.deepEqual(plain(data.studyLibraryIds), ['A', 'B']);
+  await api.deleteLibrary('B');
+  assert.deepEqual(plain(data.studyLibraryIds), [data.activeLibraryId]);
+  // 单库模式：切库后今日听写跟着走。
+  api.switchLibrary(created.libraryId);
+  assert.deepEqual(plain(data.studyLibraryIds), [created.libraryId]);
 });

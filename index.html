@@ -2447,7 +2447,7 @@
       }
       data.libraries.push(lib);
       data.activeLibraryId = lib.libraryId;
-      if (!data.combinedDraftTask) data.studyLibraryIds = [lib.libraryId];
+      syncStudySelectionWithActiveLibrary();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("library-created");
@@ -2456,11 +2456,20 @@
       return lib;
     }
 
+    // 顶部“当前词库”下拉框只决定查看/编辑哪个词库。
+    // 学习计划里勾了多个词库（合并听写）时，切库、新建、导入都不动这份勾选，只去掉已删除的词库；
+    // 只勾了一个词库（单库模式）时，今日听写仍跟着当前词库走，和原来一样。
+    function syncStudySelectionWithActiveLibrary() {
+      if (data.combinedDraftTask) return;
+      const remaining = uniqueWordIds(data.studyLibraryIds || []).filter(id => data.libraries.some(lib => lib.libraryId === id));
+      data.studyLibraryIds = remaining.length > 1 ? remaining : [data.activeLibraryId];
+    }
+
     function switchLibrary(libraryId) {
       stopAutoPlay();
       if (data.libraries.some(lib => lib.libraryId === libraryId)) {
         data.activeLibraryId = libraryId;
-        if (!data.combinedDraftTask) data.studyLibraryIds = [libraryId];
+        syncStudySelectionWithActiveLibrary();
         dictationIndex = 0;
         todaySummary = null;
         manualStrictTask = null;
@@ -2479,7 +2488,7 @@
       data.libraries = data.libraries.filter(item => item.libraryId !== libraryId);
       if (!data.libraries.length) createLibrary("我的词库", false);
       data.activeLibraryId = data.libraries[0].libraryId;
-      if (!data.combinedDraftTask) data.studyLibraryIds = [data.activeLibraryId];
+      syncStudySelectionWithActiveLibrary();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData("library-deleted");
@@ -3850,7 +3859,7 @@
         imported.libraryName = imported.libraryName + "（导入）";
         data.libraries.push(imported);
         data.activeLibraryId = imported.libraryId;
-        if (!data.combinedDraftTask) data.studyLibraryIds = [imported.libraryId];
+        syncStudySelectionWithActiveLibrary();
       }
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
