@@ -2829,17 +2829,29 @@
       return ids.map(id => data.libraries.find(lib => lib.libraryId === id)).filter(Boolean);
     }
 
-    function libraryStudyState(lib) {
-      const state = JSON.stringify({ words: lib.words, dailyRecords: lib.dailyRecords });
-      return state.length + ":" + simpleHash(state);
+    // 只记录会改变“本场该听哪些词”的数据：下一个 Day、错词池名单、单词名单。
+    // 生成合并场次时存下来，之后对比就知道场次是不是旧名单了（改错误次数、设为重点等不算）。
+    function combinedPoolState(lib) {
+      const pool = getPendingWrongWords(lib).map(word => word.id).sort();
+      const words = lib.words.map(word => word.id).sort();
+      return JSON.stringify({ day: getNextDayNumber(lib), pool, words: words.length + ":" + simpleHash(words.join("|")) });
+    }
+
+    // 单库草稿如果是在错词池变化之前生成的，就不能直接拿来合并，否则新加的错词进不来。
+    function isDraftStillCurrent(lib, draft) {
+      if (!draft || Number(draft.dayNumber) !== getNextDayNumber(lib)) return false;
+      if (!draft.taskWordIds.every(id => getWordById(lib, id))) return false;
+      const pool = getPendingWrongWords(lib).map(word => word.id).sort();
+      const draftPool = uniqueWordIds(draft.pendingWrongWordIds).sort();
+      return pool.length === draftPool.length && pool.every((id, i) => id === draftPool[i]);
     }
 
     function planCombinedTask(libraries, useDrafts = true) {
       const parts = libraries.map(lib => ({
         libraryId: lib.libraryId,
         libraryName: lib.libraryName,
-        state: libraryStudyState(lib),
-        task: clone(useDrafts && lib.currentDraftTask ? lib.currentDraftTask : buildTodayTask(lib, false))
+        poolState: combinedPoolState(lib),
+        task: clone(useDrafts && isDraftStillCurrent(lib, lib.currentDraftTask) ? lib.currentDraftTask : buildTodayTask(lib, false))
       }));
       const entries = [];
       const byEnglish = new Map();
@@ -2905,6 +2917,85 @@
       };
     }
 
+    // 提交前只拦真正写不进去的情况：词库被删、Day 已被别的记录推进、本场的词被删。
+    // 错词池、错误次数、重点这类变化允许直接提交，统计会按提交时的词库状态计算（和单库一致）。
+    function getCombinedPartIssue(part, lib) {
+      if (!lib) return "“" + part.libraryName + "”已被删除";
+      if (getNextDayNumber(lib) !== Number(part.task.dayNumber)) return "“" + part.libraryName + "”的 Day 已经变了（可能撤销或新增了记录）";
+      if (!part.task.taskWordIds.every(id => getWordById(lib, id))) return "“" + part.libraryName + "”里有本场的单词被删除了";
+      return "";
+    }
+
+    // 返回生成本场之后错词池/单词/Day 有变化的词库名；旧版场次没有 poolState，不提示。
+    function getChangedCombinedLibraries(task = data.combinedDraftTask) {
+      if (!task) return [];
+      return task.parts.filter(part => {
+        const lib = data.libraries.find(item => item.libraryId === part.libraryId);
+        if (!lib) return true;
+        return part.poolState ? part.poolState !== combinedPoolState(lib) : Boolean(getCombinedPartIssue(part, lib));
+      }).map(part => part.libraryName);
+    }
+
+    // 按当前词库重建合并场次，同时保留已勾选的错词、原来的随机顺序和当前播放到的那个词。
+    function refreshCombinedTask(old = data.combinedDraftTask) {
+      const libraries = old.parts.map(part => data.libraries.find(lib => lib.libraryId === part.libraryId)).filter(Boolean);
+      if (!libraries.length) {
+        data.combinedDraftTask = null;
+        return { task: null, added: [], removed: old.entries.map(entry => entry.word) };
+      }
+      const task = planCombinedTask(libraries, false);
+      const keyOf = entry => normalizeWord(entry.word);
+      const oldById = new Map(old.entries.map(entry => [entry.id, entry]));
+      const newByKey = new Map(task.entries.map(entry => [keyOf(entry), entry]));
+      const oldKeys = new Set(old.entries.map(keyOf));
+      if (data.studyPlayOrder === "random") {
+        // 已有的词保持原来的相对顺序，新加进来的词排在后面。
+        const kept = old.taskWordIds.map(id => newByKey.get(keyOf(oldById.get(id) || { word: "" }))).filter(Boolean).map(entry => entry.id);
+        const keptSet = new Set(kept);
+        task.taskWordIds = [...kept, ...task.taskWordIds.filter(id => !keptSet.has(id))];
+      }
+      const checkedKeys = new Set((old.checkedWrongWordIds || []).map(id => oldById.get(id)).filter(Boolean).map(keyOf));
+      task.checkedWrongWordIds = task.entries.filter(entry => checkedKeys.has(keyOf(entry))).map(entry => entry.id);
+      const currentOld = oldById.get(old.taskWordIds[old.currentIndex || 0]);
+      const currentNew = currentOld && newByKey.get(keyOf(currentOld));
+      task.currentIndex = currentNew ? Math.max(0, task.taskWordIds.indexOf(currentNew.id)) : 0;
+      task.date = old.date;
+      task.mode = old.mode || "player";
+      const added = task.entries.filter(entry => !oldKeys.has(keyOf(entry))).map(entry => entry.word);
+      const removed = old.entries.filter(entry => !newByKey.has(keyOf(entry))).map(entry => entry.word);
+      data.combinedDraftTask = task;
+      return { task, added, removed };
+    }
+
+    // 页面上“更新本场”按钮、错词本批量改池、提交被拦时共用：重建后告诉用户新增/移出了哪些词。
+    async function applyCombinedRefresh({ confirmText = "", preferMark = false } = {}) {
+      if (!data.combinedDraftTask) return false;
+      if (confirmText && !await requestAppConfirmation(confirmText)) return false;
+      let result;
+      try {
+        result = refreshCombinedTask();
+      } catch (error) { alert(error.message); return false; }
+      const { task, added, removed } = result;
+      if (task && task.taskWordIds.length > DAILY_MAX_WORDS) {
+        alert("更新后共有 " + task.taskWordIds.length + " 个词，超过整场 60 个上限，请先在学习计划里调整各词库数量。");
+      }
+      if (task) task.mode = preferMark && !added.length ? "mark" : "player";
+      stopAutoPlay();
+      todaySummary = null;
+      dictationIndex = task?.currentIndex || 0;
+      saveData();
+      viewName = "today";
+      renderNav();
+      renderTodayView(task?.mode || null);
+      const lines = [];
+      if (added.length) lines.push("新加入：" + added.join("、"));
+      if (removed.length) lines.push("已移出：" + removed.join("、"));
+      alert(task
+        ? "本场已按最新词库更新" + (lines.length ? "。\n" + lines.join("\n") : "，单词没有增减。") + "\n已勾选的错词保留。"
+        : "本场涉及的词库都已删除，已取消本场合并听写。");
+      return true;
+    }
+
     function saveCombinedResult(task, checkedIds) {
       if (data.combinedDraftTask?.taskId !== task.taskId) throw new Error("本场听写已提交或失效。");
       // 先在副本中完成所有计算，再一次保存，避免某个词库成功、另一个失败。
@@ -2912,8 +3003,11 @@
       const wrong = new Set(checkedIds);
       const summaries = task.parts.filter(part => part.task.taskWordIds.length).map(part => {
         const lib = nextData.libraries.find(item => item.libraryId === part.libraryId);
-        if (!lib || libraryStudyState(lib) !== part.state || getNextDayNumber(lib) !== part.task.dayNumber) {
-          throw new Error("词库学习数据发生变化，请按当前设置重新生成本场听写。");
+        const issue = getCombinedPartIssue(part, lib);
+        if (issue) {
+          const error = new Error(issue + "，本场需要按当前词库重新生成后才能提交。");
+          error.combinedStale = true;
+          throw error;
         }
         const wrongIds = task.entries.filter(entry => wrong.has(entry.id))
           .flatMap(entry => entry.references.filter(ref => ref.libraryId === lib.libraryId).map(ref => ref.wordId));
@@ -3200,7 +3294,13 @@
             const status = document.getElementById("autoCloudUploadStatus");
             if (status) status.textContent = "本场结果已分别保存到各词库。当前未登录云端。";
           }
-        } catch (error) { alert(error.message); }
+        } catch (error) {
+          if (!error.combinedStale) { alert(error.message); return; }
+          // 提交被拦时不丢已勾选的错词：先存下勾选，再问要不要按当前词库重建本场。
+          task.checkedWrongWordIds = checked;
+          saveData();
+          applyCombinedRefresh({ confirmText: error.message + "\n\n现在按当前词库更新本场吗？已勾选的错词会保留；如果没有新增单词，会直接回到标错题页，可以马上再提交。", preferMark: true });
+        }
         return;
       }
       const lib = getCurrentLibrary();
@@ -4186,12 +4286,14 @@
         saveData();
       }
       const lib = getDictationLibrary();
+      const changedLibraries = task ? getChangedCombinedLibraries(task) : [];
       app.innerHTML = `<div class="grid">
         <section class="card span-12"><h2>多词库听写</h2>
           <p>${libraries.length ? libraries.map(item => escapeHtml(item.libraryName)).join(" + ") : "请在学习计划中勾选词库"}</p>
           <label>本次记录日期 <input id="taskDateInput" type="date" value="${escapeHtml(task?.date || todayDate())}"></label>
           ${task ? '<button class="secondary" id="exportTodayTaskBtn">导出合并听写纸</button><button class="secondary" id="regenerateTaskBtn">按当前设置重新生成</button>' : ""}
           ${task && activeMode === "mark" ? '<button class="secondary" id="backToCombinedPlayerBtn">返回播放</button>' : ""}
+          ${changedLibraries.length ? '<div class="notice">生成本场之后，' + changedLibraries.map(name => "“" + escapeHtml(name) + "”").join("、") + ' 的错词池或单词有变化，本场还是旧名单。<button class="secondary" id="refreshCombinedTaskBtn">按最新错词池更新本场</button><br><span class="small muted">已勾选的错词会保留；不更新也可以直接提交，新变化会算到下一场。</span></div>' : ""}
         </section>
         <section class="card span-12"><h3>${task ? "本场任务" : "任务预览"}</h3>
           ${preview.parts.map(part => {
@@ -4210,6 +4312,8 @@
         bindTaskDateInput(lib, task);
         document.getElementById("exportTodayTaskBtn").onclick = () => exportDictationPaperXlsx(lib, task);
         document.getElementById("regenerateTaskBtn").onclick = () => regenerateTodayTaskFromSettings();
+        const refreshButton = document.getElementById("refreshCombinedTaskBtn");
+        if (refreshButton) refreshButton.onclick = () => applyCombinedRefresh();
         const backButton = document.getElementById("backToCombinedPlayerBtn");
         if (backButton) backButton.onclick = () => renderTodayView("player");
         bindPlayerEvents(lib, task);
@@ -5270,7 +5374,10 @@
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
         window.cloudSync.requestAutoUploadLocalData(isPendingWrong ? "wrong-pool-batch-add" : "wrong-pool-batch-remove");
       }
-      if (lib.currentDraftTask) {
+      if (data.combinedDraftTask?.parts.some(part => part.libraryId === lib.libraryId)) {
+        const refreshed = await applyCombinedRefresh({ confirmText: "已更新 " + changedCount + " 个词的错词池状态。“" + lib.libraryName + "”正在一场合并听写里，是否把最新错词池更新到本场？已勾选的错词会保留，不会增加 Day，也不会写入记录。" });
+        if (refreshed) return;
+      } else if (lib.currentDraftTask) {
         const rebuild = await requestAppConfirmation("已更新 " + changedCount + " 个词的错词池状态。今日任务已经生成，是否按最新错词池重新生成今日任务？这不会增加 Day，也不会写入记录。");
         if (rebuild) {
           viewName = "today";

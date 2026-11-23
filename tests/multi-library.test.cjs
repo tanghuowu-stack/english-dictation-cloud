@@ -21,7 +21,8 @@ function app() {
     getSupplementReviewWords, getDueDelayedReviewWords, renderStudyPlanSection,
     renderMarkWrongPanel, renderPlayerPanel, renderAnswerRevealHtml, exportDictationPaperXlsx, startDictation,
     stubExcel: (excel, download) => { requireExcelJs = () => excel; downloadWorkbook = download; },
-    handleStudyPlanChange,
+    handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
+    stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
     stubAppRender: () => { renderApp = () => {}; },
@@ -154,15 +155,33 @@ test('reload restores ordering, playback index, checked mistakes and mark mode',
   assert.equal(api.getData().libraries[0].words[0].wrongCount, 1);
 });
 
-test('changed source library rejects whole submission, without partially saving other library', () => {
+test('wrong-pool or wrong-count edits after generation no longer block combined submission', () => {
   const { api, library, setup } = app();
-  const libs = setup([library('A', ['a']), library('B', ['b'])]);
+  const libs = setup([library('A', ['a', 'x']), library('B', ['b'])]);
+  libs[0].settings.dailyTargetWords = 1;
   const task = api.planCombinedTask(libs);
   api.getData().combinedDraftTask = task;
   libs[1].words[0].wrongCount = 1;
-  assert.throws(() => api.saveCombinedResult(task, []), /数据发生变化/);
+  Object.assign(libs[0].words[1], { firstLearnDay: 1, wrongCount: 1, isPendingWrong: true });
+  const summaries = api.saveCombinedResult(task, []);
+  assert.equal(summaries.length, 2);
+  assert.equal(api.getData().combinedDraftTask, null);
+  assert.equal(api.getData().libraries[0].dailyRecords.length, 1);
+});
+
+test('advanced Day or deleted word rejects whole submission, without partially saving other library', () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a']), library('B', ['b', 'c'])]);
+  const task = api.planCombinedTask(libs);
+  api.getData().combinedDraftTask = task;
+  libs[1].dailyRecords.push({ dayNumber: 1, taskWordIds: [], wrongWordIds: [] });
+  assert.throws(() => api.saveCombinedResult(task, []), error => error.combinedStale && /“B”的 Day 已经变了/.test(error.message));
   assert.equal(api.getData().libraries[0].dailyRecords.length, 0);
   assert.equal(api.getData().combinedDraftTask, task);
+  libs[1].dailyRecords = [];
+  libs[1].words.pop();
+  assert.throws(() => api.saveCombinedResult(task, []), /单词被删除/);
+  assert.equal(api.getData().libraries[0].dailyRecords.length, 0);
 });
 
 test('storage failure preserves all library progress and combined draft for retry', () => {
@@ -320,4 +339,60 @@ test('single-library mark panel and paper keep original numbers without library 
   await api.exportDictationPaperXlsx(lib, task);
   assert.equal(sheets[0].cells.get('4,1').value, 101);
   assert.equal(sheets[0].cells.get('4,2').value, 'A释义0');
+});
+
+test('wrong-pool change after generation is detected and refresh brings the new wrong word in, keeping marks, order and position', () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a', 'b', 'c', 'dog'], 2, { dailyTargetWords: 3 }), library('B', ['e', 'f'], 1, { dailyTargetWords: 2 })]);
+  libs[0].words.slice(0, 1).forEach(word => { word.firstLearnDay = 1; });
+  libs[0].words[3].firstLearnDay = 1; // dog 已学过，不在新词里
+  api.getData().studyPlayOrder = 'random';
+  const task = api.planCombinedTask(libs);
+  api.getData().combinedDraftTask = task;
+  assert.equal(task.entries.some(entry => entry.word === 'dog'), false);
+  assert.deepEqual(plain(api.getChangedCombinedLibraries()), []);
+  // 生成后把 dog 加入错词池：页面应提示 A 有变化。
+  Object.assign(libs[0].words[3], { wrongCount: 1, isPendingWrong: true, lastWrongDay: 1 });
+  assert.deepEqual(plain(api.getChangedCombinedLibraries()), ['A']);
+  const oldOrder = task.taskWordIds.map(id => task.entries.find(entry => entry.id === id).word);
+  const checkedWord = oldOrder[2];
+  task.checkedWrongWordIds = [task.taskWordIds[2]];
+  task.currentIndex = 1;
+  const { task: next, added, removed } = api.refreshCombinedTask();
+  const wordOf = id => next.entries.find(entry => entry.id === id).word;
+  assert.deepEqual(plain(added), ['dog']);
+  assert.deepEqual(plain(removed), []);
+  assert.deepEqual(plain(next.taskWordIds.map(wordOf)), [...oldOrder, 'dog']);
+  assert.deepEqual(plain(next.checkedWrongWordIds.map(wordOf)), [checkedWord]);
+  assert.equal(wordOf(next.taskWordIds[next.currentIndex]), oldOrder[1]);
+  assert.equal(next.date, task.date);
+  assert.deepEqual(plain(api.getChangedCombinedLibraries()), []);
+  const summaries = api.saveCombinedResult(next, next.checkedWrongWordIds);
+  assert.equal(summaries.length, 2);
+});
+
+test('stale single-library draft (made before wrong-pool change) is not reused for combined session', () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a', 'dog'], 2, { dailyTargetWords: 1 }), library('B', ['e'])]);
+  libs[0].words[1].firstLearnDay = 1;
+  libs[0].currentDraftTask = api.buildTodayTask(libs[0], false);
+  assert.equal(api.planCombinedTask(libs).entries.some(entry => entry.word === 'dog'), false);
+  Object.assign(libs[0].words[1], { wrongCount: 1, isPendingWrong: true, lastWrongDay: 1 });
+  assert.equal(api.planCombinedTask(libs).entries.some(entry => entry.word === 'dog'), true);
+});
+
+test('batch wrong-pool update on a library in the combined session offers refresh and applies it', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a', 'dog'], 2, { dailyTargetWords: 1 }), library('B', ['e'])]);
+  libs[0].words[1].firstLearnDay = 1;
+  api.stubRender(); api.stubNav(); api.confirm(true);
+  const task = api.planCombinedTask(libs);
+  task.checkedWrongWordIds = [task.taskWordIds[0]];
+  api.getData().combinedDraftTask = task;
+  await api.batchUpdateWrongPool([libs[0].words[1].id], true);
+  const next = api.getData().combinedDraftTask;
+  assert.notEqual(next.taskId, task.taskId);
+  assert.equal(next.entries.some(entry => entry.word === 'dog'), true);
+  assert.equal(next.checkedWrongWordIds.length, 1);
+  assert.match(api.queuedMessages().join('\n'), /新加入：dog/);
 });
