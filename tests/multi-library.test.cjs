@@ -23,7 +23,7 @@ function app() {
     stubExcel: (excel, download) => { requireExcelJs = () => excel; downloadWorkbook = download; },
     handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
     stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
-    switchLibrary, createLibrary, deleteLibrary,
+    switchLibrary, createLibrary, deleteLibrary, replaceLocalDictationDataFromCloud,
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
     stubAppRender: () => { renderApp = () => {}; },
@@ -420,4 +420,23 @@ test('switching, creating or deleting libraries keeps a multi-library selection;
   // 单库模式：切库后今日听写跟着走。
   api.switchLibrary(created.libraryId);
   assert.deepEqual(plain(data.studyLibraryIds), [created.libraryId]);
+});
+
+test('cloud restore keeps the local multi-library selection and play order, dropping libraries gone from the cloud', () => {
+  const { api, library } = app();
+  const restored = () => plain({ version: '1.0.0', activeLibraryId: 'A', libraries: [library('A', ['a']), library('B', ['b'])] });
+  api.setData({ version: '1.0.0', libraries: [library('A', ['a']), library('B', ['b']), library('C', ['c'])],
+    activeLibraryId: 'A', studyLibraryIds: ['A', 'B', 'C'], studyPlayOrder: 'random' });
+  api.replaceLocalDictationDataFromCloud(restored());
+  let data = api.getData();
+  assert.deepEqual(plain(data.studyLibraryIds), ['A', 'B']);
+  assert.equal(data.studyPlayOrder, 'random');
+  assert.deepEqual(plain(api.getStudyLibraries().map(lib => lib.libraryId)), ['A', 'B']);
+  // 云端只剩一个勾选的词库时退回单库模式，跟着当前词库。
+  api.setData({ version: '1.0.0', libraries: [library('A', ['a']), library('C', ['c'])],
+    activeLibraryId: 'A', studyLibraryIds: ['A', 'C'], studyPlayOrder: 'ordered' });
+  api.replaceLocalDictationDataFromCloud(restored());
+  data = api.getData();
+  assert.deepEqual(plain(data.studyLibraryIds), ['A']);
+  assert.equal(data.studyPlayOrder, 'ordered');
 });

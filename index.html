@@ -2283,7 +2283,17 @@
     };
 
     window.replaceLocalDictationDataFromCloud = function(restoredData) {
-      return applyAllDataImportObject(restoredData, { render: false });
+      // 云端只存词库、单词和记录；学习计划里勾了哪些词库、播放顺序是本机设置，云端恢复的数据里没有。
+      // 恢复时沿用本机原来的勾选和顺序，只去掉云端已经不存在的词库，避免自动同步后合并听写退回单库。
+      const localSelection = data ? { ids: data.studyLibraryIds, order: data.studyPlayOrder } : null;
+      const result = applyAllDataImportObject(restoredData, { render: false });
+      if (localSelection) {
+        if (localSelection.order) data.studyPlayOrder = localSelection.order;
+        const ids = uniqueWordIds(localSelection.ids || []).filter(id => data.libraries.some(lib => lib.libraryId === id));
+        data.studyLibraryIds = ids.length > 1 ? ids : [data.activeLibraryId];
+        saveData();
+      }
+      return result;
     };
 
     window.updateLocalLibraryUpdatedAt = function(isoTimestamp) {
