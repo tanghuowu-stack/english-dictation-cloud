@@ -1953,6 +1953,8 @@
     let dictationIndex = 0;
     let autoTimer = null;
     let todaySummary = null;
+    // 合并听写的预览：随机顺序下每次刷新都重新随机会让“预览”和“开始后”对不上，所以缓存一份，词库数据或设置没变就沿用。
+    let combinedPreviewCache = null;
     let manualStrictTask = null;
     let manualBatchSession = null;
     let editingRecordDay = null;
@@ -2491,13 +2493,25 @@
     async function deleteLibrary(libraryId) {
       const lib = data.libraries.find(item => item.libraryId === libraryId);
       if (!lib) return;
-      const first = await requestAppConfirmation("确定要删除词库“" + lib.libraryName + "”吗？这个操作不能撤销。", "删除词库");
+      const inCombined = Boolean(data.combinedDraftTask?.parts.some(part => part.libraryId === libraryId));
+      const first = await requestAppConfirmation("确定要删除词库“" + lib.libraryName + "”吗？这个操作不能撤销。"
+        + (inCombined ? "它正在当前这场合并听写里，删除后本场会去掉它的单词，其他词库的已勾选错词保留。" : ""), "删除词库");
       if (!first) return;
       const second = await requestAppConfirmation("删除后，该词库的单词、进度和错词记录都会消失。", "再次确认删除");
       if (!second) return;
       data.libraries = data.libraries.filter(item => item.libraryId !== libraryId);
       if (!data.libraries.length) createLibrary("我的词库", false);
       data.activeLibraryId = data.libraries[0].libraryId;
+      if (inCombined) {
+        // 合并场次里去掉被删的词库，避免场次卡在“词库已被删除，无法提交”。
+        try {
+          const { task } = refreshCombinedTask();
+          if (task && !task.taskWordIds.length) data.combinedDraftTask = null;
+        } catch (error) { data.combinedDraftTask = null; }
+        data.studyLibraryIds = (data.studyLibraryIds || []).filter(id => id !== libraryId);
+        dictationIndex = data.combinedDraftTask?.currentIndex || 0;
+        stopAutoPlay();
+      }
       syncStudySelectionWithActiveLibrary();
       saveData();
       if (window.cloudSync && typeof window.cloudSync.requestAutoUploadLocalData === "function") {
@@ -2913,6 +2927,25 @@
       };
     }
 
+    function getCombinedPreview(libraries) {
+      const key = simpleHash(JSON.stringify({
+        order: data.studyPlayOrder || "ordered", date: todayDate(),
+        libs: libraries.map(lib => [lib.libraryId, lib.libraryName, lib.settings, lib.words, lib.dailyRecords, lib.currentDraftTask?.taskId || null])
+      }));
+      if (combinedPreviewCache?.key !== key) combinedPreviewCache = { key, task: planCombinedTask(libraries) };
+      return combinedPreviewCache.task;
+    }
+
+    // 超过 60 个词时的说明：错词池本身就超了的话，调新词数降不下来，要明确告诉用户怎么办。
+    function combinedOverflowMessage(task) {
+      const counts = getTaskCategoryCounts(task);
+      if (counts.wrong > DAILY_MAX_WORDS) {
+        const detail = task.parts.map(part => part.libraryName + " " + part.task.pendingWrongWordIds.length + " 个").join("、");
+        return "合并去重后共有 " + counts.total + " 个词，其中错词池就有 " + counts.wrong + " 个（" + detail + "），已超过整场 60 个上限，调新词数也降不下来。请先在学习计划里只勾一个词库，单独把它的错词听写掉，再回来合并。";
+      }
+      return "合并去重后共有 " + counts.total + " 个词，超过整场 60 个上限。请先在学习计划中调小各词库的新词数或复查数。";
+    }
+
     function getDictationLibrary() {
       const task = data?.combinedDraftTask;
       if (!task) return getCurrentLibrary();
@@ -3238,15 +3271,16 @@
       const libraries = getStudyLibraries();
       if (data.combinedDraftTask || libraries.length > 1) {
         try {
-          const task = data.combinedDraftTask || planCombinedTask(libraries);
+          const task = data.combinedDraftTask || getCombinedPreview(libraries);
           if (task.taskWordIds.length > DAILY_MAX_WORDS) {
-            alert("合并去重后共有 " + task.taskWordIds.length + " 个词，超过整场 60 个上限。请先调整各词库的新词数或复查数。");
+            alert(combinedOverflowMessage(task));
             return;
           }
           if (!task.taskWordIds.length) { alert("所选词库今天没有需要听写的单词。"); return; }
           task.date = document.getElementById("taskDateInput")?.value || task.date;
           data.combinedDraftTask = task;
           if (!saveData()) return;
+          combinedPreviewCache = null;
           todaySummary = null;
           dictationIndex = task.currentIndex || 0;
           renderTodayView(task.mode || "player");
@@ -4337,7 +4371,7 @@
       const libraries = task
         ? task.parts.map(part => data.libraries.find(lib => lib.libraryId === part.libraryId)).filter(Boolean)
         : getStudyLibraries();
-      const preview = task || planCombinedTask(libraries);
+      const preview = task || getCombinedPreview(libraries);
       const counts = getTaskCategoryCounts(preview);
       const overflow = counts.total > DAILY_MAX_WORDS;
       const activeMode = mode || task?.mode || "intro";
@@ -4359,13 +4393,18 @@
         <section class="card span-12"><h3>${task ? "本场任务" : "任务预览"}</h3>
           ${preview.parts.map(part => {
             const c = getTaskCategoryCounts(part.task);
-            return `<p><strong>${escapeHtml(part.libraryName)}</strong> · Day ${part.task.dayNumber}：新词 ${c.new} · 错词池 ${c.wrong} · 复查 ${c.review}（自动补充 ${(part.task.supplementReviewWordIds || []).length}） · 共 ${c.total} 个${c.total ? "" : "，本次不推进 Day"}</p>`;
+            const partLib = data.libraries.find(item => item.libraryId === part.libraryId);
+            const hints = [];
+            if (partLib?.settings?.pauseNewWords) hints.push("已暂停新词");
+            if ((part.task.postponedReviewWordIds || []).length) hints.push("另有 " + part.task.postponedReviewWordIds.length + " 个到期复查超过当天复查数，顺延到后续");
+            return `<p><strong>${escapeHtml(part.libraryName)}</strong> · Day ${part.task.dayNumber}：新词 ${c.new} · 错词池 ${c.wrong} · 复查 ${c.review}（自动补充 ${(part.task.supplementReviewWordIds || []).length}） · 共 ${c.total} 个${c.total ? "" : "，本次不推进 Day"}${hints.length ? '<br><span class="small muted">' + escapeHtml(hints.join("；")) + "</span>" : ""}</p>`;
           }).join("")}
           <div class="notice">合并去重后：新词 ${counts.new} · 错词池 ${counts.wrong} · 错词复查 ${counts.review} · <strong>合计 ${counts.total} 个</strong>。${preview.parts.reduce((sum, part) => sum + part.task.taskWordIds.length, 0) > counts.total ? "跨库重复英文只听写一次。" : ""}</div>
-          ${overflow ? '<div class="notice">超过整场 60 个上限，请在学习计划中调整各库数量后再开始。</div>' : ""}
+          ${overflow ? '<div class="notice">' + escapeHtml(combinedOverflowMessage(preview)) + '</div>' : ""}
           ${!task ? `<button id="startDictationBtn" ${overflow || !counts.total ? "disabled" : ""}>生成 / 开始合并听写</button>` : ""}
         </section>
         ${task ? (activeMode === "mark" ? renderMarkWrongPanel(lib, task) : renderPlayerPanel(lib, task)) : ""}
+        ${task && activeMode !== "mark" && task.parts.length > 1 ? '<p class="small muted span-12">合并听写的语速、声音和显示答案设置沿用“' + escapeHtml(task.parts[0].libraryName) + '”的设置，在这里修改也会保存到“' + escapeHtml(task.parts[0].libraryName) + '”。</p>' : ""}
         ${renderStudyPlanSection(getCurrentLibrary(), activeMode)}
       </div>`;
       bindStudyPlanEvents(activeMode);

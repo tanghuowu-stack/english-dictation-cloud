@@ -134,13 +134,15 @@ function validateLocalDataForAutoUpload(localData) {
     return { valid: false, reasons };
   }
   const summary = summarizeLibrary(activeLibrary);
-  if (summary.total <= 0) reasons.push("当前词库没有单词");
+  // 合并听写不会切换当前词库：当前词库可能是空的（比如默认的“我的词库”），而真正听写的是另外几个词库。
+  // 所以只在所有词库都没有单词时才拦，异常状态检查对每个有单词的词库都做一遍。
+  const summaries = libraries.map(summarizeLibrary).filter(item => item.total > 0);
+  if (!summaries.length) reasons.push("所有词库都没有单词");
   // Fix R6：阈值判断统一读取 index.html 里定义的共享函数，避免两处各写一份、条件不一致
-  if (
-    typeof window.isSuspiciousAllWordsLearnedState === "function"
-      ? window.isSuspiciousAllWordsLearnedState(summary.currentDay, summary.total, summary.learned)
-      : (summary.currentDay <= 20 && summary.total === 595 && summary.learned === 595)
-  ) {
+  const isSuspicious = item => (typeof window.isSuspiciousAllWordsLearnedState === "function"
+    ? window.isSuspiciousAllWordsLearnedState(item.currentDay, item.total, item.learned)
+    : (item.currentDay <= 20 && item.total === 595 && item.learned === 595));
+  if (summaries.some(isSuspicious)) {
     reasons.push("检测到低 Day 下 595 个词全部已学的异常状态");
   }
   return { valid: reasons.length === 0, reasons, summary };

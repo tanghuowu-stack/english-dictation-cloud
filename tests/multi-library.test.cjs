@@ -24,6 +24,7 @@ function app() {
     handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
     stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
     switchLibrary, createLibrary, deleteLibrary, replaceLocalDictationDataFromCloud, undoLatestDailyRecord,
+    getCombinedPreview, combinedOverflowMessage,
     stubCloudDelete: calls => { window.cloudSync = { deleteSessionAndSync: async (libraryId, id) => { calls.push([libraryId, id]); } }; },
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
@@ -507,4 +508,76 @@ test('records without a session id (older or cloud-restored) are grouped by iden
   await api.undoLatestDailyRecord();
   assert.equal(libs[0].dailyRecords.length, 0);
   assert.equal(libs[1].dailyRecords.length, 1);
+});
+
+// 从 cloudSyncUi.js 里取出自动上传校验函数单独运行（模块本身依赖 Vite 环境变量和 Supabase，无法直接 import）。
+function autoUploadValidator() {
+  const src = fs.readFileSync(require('node:path').join(__dirname, '../src/cloudSyncUi.js'), 'utf8');
+  const pick = name => {
+    const start = src.indexOf('function ' + name + '(');
+    const end = src.indexOf('\n}\n', start) + 3;
+    return src.slice(start, end);
+  };
+  const env = vm.createContext({ window: {} });
+  vm.runInContext(pick('summarizeLibrary') + pick('validateLocalDataForAutoUpload'), env);
+  return vm.runInContext('validateLocalDataForAutoUpload', env);
+}
+
+test('auto upload is not blocked when the active library is empty but other (combined) libraries have words', () => {
+  const validate = autoUploadValidator();
+  const { library } = app();
+  const empty = { ...library('E', []), libraryName: '我的词库' };
+  const ok = validate({ activeLibraryId: 'E', libraries: [empty, library('A', ['a']), library('B', ['b'])] });
+  assert.equal(ok.valid, true, JSON.stringify(ok.reasons));
+  const allEmpty = validate({ activeLibraryId: 'E', libraries: [empty, library('F', [])] });
+  assert.equal(allEmpty.valid, false);
+  assert.match(allEmpty.reasons.join(), /所有词库都没有单词/);
+});
+
+test('random combined preview is reused when starting, so the started order matches what was previewed', () => {
+  const { api, env, library, setup } = app();
+  setup([library('A', ['a', 'b', 'c']), library('B', ['d', 'e'])]);
+  api.getData().studyPlayOrder = 'random';
+  vm.runInContext('let seed = 1; Math.random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }', env);
+  const libs = api.getStudyLibraries();
+  const preview = api.getCombinedPreview(libs);
+  assert.equal(api.getCombinedPreview(libs), preview, 'repeated renders keep the same preview');
+  const words = task => task.taskWordIds.map(id => task.entries.find(entry => entry.id === id).word);
+  const previewed = words(preview);
+  api.stubRender();
+  api.startDictation();
+  assert.deepEqual(plain(words(api.getData().combinedDraftTask)), plain(previewed));
+  // 数据变了就重新生成预览。
+  api.getData().combinedDraftTask = null;
+  libs[0].settings.dailyTargetWords = 1;
+  assert.notEqual(api.getCombinedPreview(libs), preview);
+});
+
+test('deleting a library that is in the combined session drops its words and keeps other marks', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a', 'b']), library('B', ['c']), library('C', ['x'])]);
+  api.stubAppRender(); api.confirm(true);
+  const task = api.planCombinedTask(libs.slice(0, 2));
+  task.checkedWrongWordIds = [task.entries.find(entry => entry.word === 'b').id];
+  api.getData().combinedDraftTask = task;
+  api.getData().studyLibraryIds = ['A', 'B'];
+  await api.deleteLibrary('B');
+  const next = api.getData().combinedDraftTask;
+  assert.deepEqual(plain(next.parts.map(part => part.libraryId)), ['A']);
+  assert.deepEqual(plain(next.entries.map(entry => entry.word)), ['a', 'b']);
+  assert.deepEqual(plain(next.checkedWrongWordIds.map(id => next.entries.find(entry => entry.id === id).word)), ['b']);
+  assert.deepEqual(plain(api.getData().studyLibraryIds), ['A']);
+  assert.equal(api.saveCombinedResult(next, next.checkedWrongWordIds).length, 1);
+});
+
+test('over-60 message explains when the wrong pool alone is too large', () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', Array.from({ length: 40 }, (_, i) => 'a' + i)), library('B', Array.from({ length: 30 }, (_, i) => 'b' + i))]);
+  libs.forEach(lib => lib.words.forEach(word => Object.assign(word, { firstLearnDay: 1, wrongCount: 1, isPendingWrong: true, lastWrongDay: 1 })));
+  libs.forEach(lib => { lib.dailyRecords = [{ dayNumber: 1, taskWordIds: [], wrongWordIds: [] }]; });
+  const task = api.planCombinedTask(libs);
+  assert.match(api.combinedOverflowMessage(task), /错词池就有 70 个（A 40 个、B 30 个）.*只勾一个词库/);
+  libs.forEach(lib => lib.words.forEach(word => { word.isPendingWrong = false; word.firstLearnDay = null; word.wrongCount = 0; }));
+  libs.forEach(lib => { lib.settings.dailyTargetWords = 40; });
+  assert.match(api.combinedOverflowMessage(api.planCombinedTask(libs)), /调小各词库的新词数/);
 });
