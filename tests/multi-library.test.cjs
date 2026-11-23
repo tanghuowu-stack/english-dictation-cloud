@@ -23,7 +23,8 @@ function app() {
     stubExcel: (excel, download) => { requireExcelJs = () => excel; downloadWorkbook = download; },
     handleStudyPlanChange, refreshCombinedTask, getChangedCombinedLibraries, batchUpdateWrongPool,
     stubNav: () => { renderNav = () => {}; renderWrongBook = () => {}; },
-    switchLibrary, createLibrary, deleteLibrary, replaceLocalDictationDataFromCloud,
+    switchLibrary, createLibrary, deleteLibrary, replaceLocalDictationDataFromCloud, undoLatestDailyRecord,
+    stubCloudDelete: calls => { window.cloudSync = { deleteSessionAndSync: async (libraryId, id) => { calls.push([libraryId, id]); } }; },
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
     stubAppRender: () => { renderApp = () => {}; },
@@ -439,4 +440,71 @@ test('cloud restore keeps the local multi-library selection and play order, drop
   data = api.getData();
   assert.deepEqual(plain(data.studyLibraryIds), ['A']);
   assert.equal(data.studyPlayOrder, 'ordered');
+});
+
+test('undo of a combined session removes its record from every library together, including cloud sessions', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a'], 3), library('B', ['b'], 5), library('C', ['c'], 2)]);
+  const task = api.planCombinedTask(libs.slice(0, 2));
+  api.getData().combinedDraftTask = task;
+  api.saveCombinedResult(task, [task.entries[0].id]);
+  const data = api.getData();
+  const [a, b] = data.libraries;
+  assert.equal(a.dailyRecords.at(-1).combinedSessionId, task.taskId);
+  assert.equal(a.dailyRecords.at(-1).completedAt, b.dailyRecords.at(-1).completedAt);
+  const recordIds = [a.dailyRecords.at(-1).recordId, b.dailyRecords.at(-1).recordId];
+  api.stubAppRender(); api.confirm(true);
+  const calls = [];
+  api.stubCloudDelete(calls);
+  const cBefore = JSON.stringify(data.libraries[2]);
+  data.activeLibraryId = 'B';
+  await api.undoLatestDailyRecord();
+  assert.equal(api.getNextDayNumber(a), 3);
+  assert.equal(api.getNextDayNumber(b), 5);
+  assert.equal(a.words[0].wrongCount, 0);
+  assert.equal(JSON.stringify(data.libraries[2]), cBefore);
+  assert.deepEqual(plain(calls).sort(), [['A', recordIds[0]], ['B', recordIds[1]]].sort());
+});
+
+test('combined undo is refused when another library has newer records; single-library undo unchanged', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a', 'x']), library('B', ['b'])]);
+  const task = api.planCombinedTask(libs);
+  api.getData().combinedDraftTask = task;
+  api.saveCombinedResult(task, []);
+  const data = api.getData();
+  const [a, b] = data.libraries;
+  a.dailyRecords.push({ recordId: 'later', dayNumber: 2, date: '2026-11-24', completedAt: '2099-01-01T00:00:00.000Z', taskWordIds: [], wrongWordIds: [] });
+  api.stubAppRender(); api.confirm(true);
+  data.activeLibraryId = 'B';
+  await api.undoLatestDailyRecord();
+  assert.equal(b.dailyRecords.length, 1);
+  assert.equal(a.dailyRecords.length, 2);
+  assert.match(api.queuedMessages().join('\n'), /“A”在那之后又有新的记录，无法整场撤销/);
+  // 在 A 上撤销：最新一条是单库记录，只撤 A 自己，不碰 B。
+  data.activeLibraryId = 'A';
+  await api.undoLatestDailyRecord();
+  assert.equal(a.dailyRecords.length, 1);
+  assert.equal(b.dailyRecords.length, 1);
+  // 再撤一次：这回是合并场次，两边一起撤。
+  await api.undoLatestDailyRecord();
+  assert.equal(a.dailyRecords.length, 0);
+  assert.equal(b.dailyRecords.length, 0);
+});
+
+test('records without a session id (older or cloud-restored) are grouped by identical completion time and date', async () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['a']), library('B', ['b'])]);
+  const at = '2026-11-20T08:00:00.000Z';
+  libs[0].dailyRecords.push({ recordId: 'ra', dayNumber: 1, date: '2026-11-20', completedAt: at, taskWordIds: ['a'], wrongWordIds: [] });
+  libs[1].dailyRecords.push({ recordId: 'rb', dayNumber: 1, date: '2026-11-20', completedAt: at, taskWordIds: ['b'], wrongWordIds: [] });
+  api.stubAppRender(); api.confirm(true);
+  await api.undoLatestDailyRecord();
+  assert.equal(libs[0].dailyRecords.length + libs[1].dailyRecords.length, 0);
+  // 时间相同但日期不同：不算同一场，只撤当前词库。
+  libs[0].dailyRecords.push({ recordId: 'ra2', dayNumber: 1, date: '2026-11-21', completedAt: at, taskWordIds: [], wrongWordIds: [] });
+  libs[1].dailyRecords.push({ recordId: 'rb2', dayNumber: 1, date: '2026-11-22', completedAt: at, taskWordIds: [], wrongWordIds: [] });
+  await api.undoLatestDailyRecord();
+  assert.equal(libs[0].dailyRecords.length, 0);
+  assert.equal(libs[1].dailyRecords.length, 1);
 });

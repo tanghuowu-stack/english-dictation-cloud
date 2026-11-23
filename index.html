@@ -3020,6 +3020,7 @@
       // 先在副本中完成所有计算，再一次保存，避免某个词库成功、另一个失败。
       const nextData = clone(data);
       const wrong = new Set(checkedIds);
+      const completedAt = nowIso();
       const summaries = task.parts.filter(part => part.task.taskWordIds.length).map(part => {
         const lib = nextData.libraries.find(item => item.libraryId === part.libraryId);
         const issue = getCombinedPartIssue(part, lib);
@@ -3031,6 +3032,9 @@
         const wrongIds = task.entries.filter(entry => wrong.has(entry.id))
           .flatMap(entry => entry.references.filter(ref => ref.libraryId === lib.libraryId).map(ref => ref.wordId));
         const record = createDailyRecord(lib, { ...part.task, date: task.date }, wrongIds, "normal");
+        // 同一场合并听写写进各词库的记录共用一个场次号和完成时间，撤销时据此一起撤。
+        record.combinedSessionId = task.taskId;
+        record.completedAt = completedAt;
         const summary = updateWordStatsFromRecord(lib, record);
         lib.dailyRecords.push(record);
         lib.currentDraftTask = null;
@@ -3345,33 +3349,71 @@
       }
     }
 
+    function getLatestDailyRecord(lib) {
+      return lib.dailyRecords.slice().sort((a, b) => {
+        const dayOrder = Number(b.dayNumber || 0) - Number(a.dayNumber || 0);
+        return dayOrder || String(b.completedAt || "").localeCompare(String(a.completedAt || ""));
+      })[0];
+    }
+
+    // 找出和这条记录属于同一场合并听写的其他词库记录：优先看 combinedSessionId；
+    // 旧记录或云端恢复的记录没有场次号，就看完成时间和听写日期是否完全相同（同一场一次写入）。
+    function getCombinedRecordGroup(lib, record) {
+      const group = [{ lib, record }];
+      if (!record?.combinedSessionId && !record?.completedAt) return group;
+      data.libraries.forEach(other => {
+        if (other.libraryId === lib.libraryId) return;
+        const match = other.dailyRecords.find(item => record.combinedSessionId
+          ? item.combinedSessionId === record.combinedSessionId
+          : !item.combinedSessionId && item.completedAt === record.completedAt && item.date === record.date);
+        if (match) group.push({ lib: other, record: match });
+      });
+      return group;
+    }
+
     async function undoLatestDailyRecord() {
       const lib = getCurrentLibrary();
       if (!lib || !lib.dailyRecords.length) {
         alert("没有可撤销的完成记录。");
         return;
       }
-      const ok = await requestAppConfirmation("确定要撤销最近一次完成记录吗？这会删除最后一天的记录，并重新计算词库状态。");
-      if (!ok) return;
-      const latest = lib.dailyRecords.slice().sort((a, b) => {
-        const dayOrder = Number(b.dayNumber || 0) - Number(a.dayNumber || 0);
-        return dayOrder || String(b.completedAt || "").localeCompare(String(a.completedAt || ""));
-      })[0];
-      const latestIndex = lib.dailyRecords.indexOf(latest);
-      if (latestIndex >= 0) lib.dailyRecords.splice(latestIndex, 1);
-      lib.currentDraftTask = null;
+      const latest = getLatestDailyRecord(lib);
+      const group = getCombinedRecordGroup(lib, latest);
+      if (group.length > 1) {
+        // 合并听写一场写进了多个词库，必须一起撤，否则会一半撤了一半没撤。
+        const blocked = group.filter(item => getLatestDailyRecord(item.lib) !== item.record);
+        if (blocked.length) {
+          alert("最近一次记录来自一场合并听写（" + group.map(item => item.lib.libraryName).join(" + ") + "），但“"
+            + blocked.map(item => item.lib.libraryName).join("”、“")
+            + "”在那之后又有新的记录，无法整场撤销。请先切到该词库撤销更晚的记录。");
+          return;
+        }
+        const ok = await requestAppConfirmation("最近一次记录来自一场合并听写（" + group.map(item => item.lib.libraryName).join(" + ")
+          + "）。撤销会同时删除这 " + group.length + " 个词库的本场记录，并分别重新计算词库状态。确定继续吗？");
+        if (!ok) return;
+      } else {
+        const ok = await requestAppConfirmation("确定要撤销最近一次完成记录吗？这会删除最后一天的记录，并重新计算词库状态。");
+        if (!ok) return;
+      }
+      group.forEach(item => {
+        const index = item.lib.dailyRecords.indexOf(item.record);
+        if (index >= 0) item.lib.dailyRecords.splice(index, 1);
+        item.lib.currentDraftTask = null;
+        recalculateLibraryState(item.lib);
+        item.lib.updatedAt = new Date().toISOString();
+      });
       todaySummary = null;
       dictationIndex = 0;
-      recalculateLibraryState(lib);
-      lib.updatedAt = new Date().toISOString();
       saveData();
       renderApp();
-      // 先删云端对应 session，避免自动拉取把记录重新同步回来
-      if (latest && window.cloudSync && typeof window.cloudSync.deleteSessionAndSync === "function") {
-        const sessionSourceLocalId = latest.recordId
-          ? String(latest.recordId)
-          : "day:" + String(latest.dayNumber || "unknown");
-        window.cloudSync.deleteSessionAndSync(lib.libraryId, sessionSourceLocalId);
+      // 先删云端对应 session，避免自动拉取把记录重新同步回来；多个词库依次删，避免同时触发上传。
+      if (window.cloudSync && typeof window.cloudSync.deleteSessionAndSync === "function") {
+        for (const item of group) {
+          const sessionSourceLocalId = item.record.recordId
+            ? String(item.record.recordId)
+            : "day:" + String(item.record.dayNumber || "unknown");
+          await window.cloudSync.deleteSessionAndSync(item.lib.libraryId, sessionSourceLocalId);
+        }
       }
     }
 
