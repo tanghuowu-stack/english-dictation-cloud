@@ -19,7 +19,8 @@ function app() {
     makeWord, buildTodayTask, planCombinedTask, getStudyLibraries, getDictationLibrary,
     getTaskCategoryCounts, saveCombinedResult, saveData, loadData, getNextDayNumber,
     getSupplementReviewWords, getDueDelayedReviewWords, renderStudyPlanSection,
-    renderMarkWrongPanel, startDictation,
+    renderMarkWrongPanel, renderPlayerPanel, renderAnswerRevealHtml, exportDictationPaperXlsx, startDictation,
+    stubExcel: (excel, download) => { requireExcelJs = () => excel; downloadWorkbook = download; },
     handleStudyPlanChange,
     setData: value => { data = value; }, getData: () => data,
     stubRender: () => { renderTodayView = () => {}; },
@@ -57,7 +58,9 @@ test('three libraries: deduplicate English, namespace identical IDs, retain libr
   assert.equal(apple.references.length, 2);
   api.getData().combinedDraftTask = task;
   const display = api.getDictationLibrary();
-  assert.match(display.words[0].meaning, /A：A释义0；B：B释义0/);
+  // 释义只放纯释义，不再拼接词库名；来源词库单独放在 libraryNames 里。
+  assert.equal(display.words[0].meaning, 'A释义0；B释义0');
+  assert.deepEqual(plain(display.words[0].libraryNames), ['A', 'B']);
   const summaries = api.saveCombinedResult(task, [apple.id]);
   assert.equal(summaries.length, 3);
   const saved = api.getData().libraries;
@@ -224,4 +227,97 @@ test('global random order is persistent and does not change membership or source
   api.getData().combinedDraftTask = task;
   api.saveData(); api.loadData();
   assert.deepEqual(plain(api.getData().combinedDraftTask.taskWordIds), plain(task.taskWordIds));
+});
+
+// 最小化的 ExcelJS 替身：只记录单元格的值，用来检查导出的打印纸内容。
+function fakeExcel() {
+  const sheets = [];
+  class Workbook {
+    addWorksheet() {
+      const cells = new Map();
+      const cell = (row, col) => {
+        const key = typeof row === 'string' ? row : row + ',' + col;
+        if (!cells.has(key)) cells.set(key, {});
+        return cells.get(key);
+      };
+      const sheet = { cells, getCell: cell, getRow: () => ({}), mergeCells() {} };
+      sheets.push(sheet);
+      return sheet;
+    }
+  }
+  return { ExcelJS: { Workbook }, sheets };
+}
+
+test('combined display splits pure meaning from library tags and deduplicates identical meanings', () => {
+  const { api, library, setup } = app();
+  const libs = setup([library('A', ['same', 'diff']), library('B', ['SAME', 'Diff'])]);
+  libs[1].words[0].meaning = libs[0].words[0].meaning; // 两个词库释义相同
+  libs[0].words[1].meaning = '';                     // 一个词库没有释义
+  const task = api.planCombinedTask(libs);
+  api.getData().combinedDraftTask = task;
+  const words = api.getDictationLibrary().words;
+  const same = words.find(word => word.word === 'same');
+  assert.equal(same.meaning, 'A释义0');
+  assert.deepEqual(plain(same.libraryNames), ['A', 'B']);
+  const diff = words.find(word => word.word === 'diff');
+  assert.equal(diff.meaning, 'B释义1');
+  assert.ok(words.every(word => !word.meaning.includes('：')));
+});
+
+test('combined sequence numbers follow play order on mark panel, player and printed paper', async () => {
+  const { api, env, library, setup } = app();
+  const libs = setup([library('A', ['a', 'b']), library('B', ['c'])]);
+  api.getData().studyPlayOrder = 'random';
+  vm.runInContext('Math.random = () => 0', env);
+  const task = api.planCombinedTask(libs);
+  assert.deepEqual(plain(task.taskWordIds), ['combined_1', 'combined_2', 'combined_0']);
+  api.getData().combinedDraftTask = task;
+  const lib = api.getDictationLibrary();
+  const byId = id => lib.words.find(word => word.id === id);
+  assert.deepEqual(plain(task.taskWordIds.map(id => byId(id).originalNo)), [1, 2, 3]);
+
+  const mark = api.renderMarkWrongPanel(lib, task);
+  assert.doesNotMatch(mark, /所属词库/);
+  const rows = mark.split('<tr>').slice(2);
+  assert.deepEqual(rows.map(row => row.match(/<td>(\d+)<\/td>/)[1]), ['1', '2', '3']);
+  assert.match(rows[0], /<td>A释义1<span class="tag library-tag">A<\/span><\/td>/);
+  assert.match(rows[1], /<td>B释义0<span class="tag library-tag">B<\/span><\/td>/);
+
+  lib.settings.showAnswerMeaning = true;
+  const reveal = api.renderAnswerRevealHtml(byId('combined_2'), lib);
+  assert.match(reveal, /中文释义：<\/span>B释义0<span class="tag library-tag">B<\/span>/);
+  const player = api.renderPlayerPanel(lib, task);
+  assert.match(player, /第 1 \/ 3 个/);
+  assert.doesNotMatch(player, /所属词库：/);
+
+  const { ExcelJS, sheets } = fakeExcel();
+  let filename = '';
+  api.stubExcel(ExcelJS, async (_, name) => { filename = name; });
+  await api.exportDictationPaperXlsx(lib, task);
+  const cells = sheets[0].cells;
+  // 打印纸左栏 3 行，从第 4 行开始：序号用本场顺序，中文只印纯释义。
+  assert.deepEqual([4, 5].map(row => cells.get(row + ',1').value), [1, 2]);
+  assert.deepEqual([4, 5].map(row => cells.get(row + ',2').value), ['A释义1', 'B释义0']);
+  assert.equal(cells.get('4,5').value, 3);
+  assert.equal(cells.get('4,6').value, 'A释义0');
+  assert.match(filename, /听写纸-多词库-/);
+});
+
+test('single-library mark panel and paper keep original numbers without library tags', async () => {
+  const { api, library, setup } = app();
+  const [lib] = setup([library('A', ['a', 'b', 'c'], 1, { dailyTargetWords: 3 })]);
+  lib.words[0].originalNo = 101;
+  lib.words[1].originalNo = 102;
+  lib.words[2].originalNo = 103;
+  const task = api.buildTodayTask(lib);
+  const mark = api.renderMarkWrongPanel(lib, task);
+  assert.doesNotMatch(mark, /library-tag|所属词库/);
+  assert.match(mark, /<td>1<\/td>\s*<td class="word-cell">a<\/td>\s*<td>A释义0<\/td>/);
+  lib.settings.showAnswerMeaning = true;
+  assert.doesNotMatch(api.renderAnswerRevealHtml(lib.words[0], lib), /library-tag/);
+  const { ExcelJS, sheets } = fakeExcel();
+  api.stubExcel(ExcelJS, async () => {});
+  await api.exportDictationPaperXlsx(lib, task);
+  assert.equal(sheets[0].cells.get('4,1').value, 101);
+  assert.equal(sheets[0].cells.get('4,2').value, 'A释义0');
 });

@@ -356,6 +356,18 @@
     .tag.multi { background: var(--color-primary-light); color: var(--color-primary-dark); }
     /* 未错 → 浅亮绿（正向/安全） */
     .tag.ok { background: var(--color-success-light); color: var(--color-success); }
+    /* 合并听写：词库来源小标签（次要信息，小号灰色） */
+    .tag.library-tag {
+      min-height: 18px;
+      padding: 1px 6px;
+      margin-left: 6px;
+      font-size: 11px;
+      font-weight: 400;
+      background: #f1f1f1;
+      color: var(--color-text-secondary);
+      vertical-align: middle;
+    }
+    .tag.library-tag + .tag.library-tag { margin-left: 4px; }
 
     /* §5.3 今日任务横幅：浅色卡片，左边框 + 加粗数字体现层级 */
     .today-banner {
@@ -2874,13 +2886,20 @@
       const task = data?.combinedDraftTask;
       if (!task) return getCurrentLibrary();
       const owner = data.libraries.find(lib => lib.libraryId === task.parts[0]?.libraryId) || getCurrentLibrary();
+      // 合并场次的序号统一用本场播放顺序（1..N），打印纸、播放页“第 N 个”、标记页“#”三处一致。
+      const playOrder = new Map(task.taskWordIds.map((id, position) => [id, position]));
       return {
         libraryName: task.parts.map(part => part.libraryName).join(" + "),
         settings: owner.settings, dailyRecords: [],
-        words: task.entries.map((entry, index) => ({
-          ...entry, index, originalNo: index + 1,
-          meaning: entry.references.map(ref => ref.libraryName + "：" + (ref.meaning || "无释义")).join("；")
-        })),
+        words: task.entries.map((entry, entryIndex) => {
+          const position = playOrder.has(entry.id) ? playOrder.get(entry.id) : entryIndex;
+          return {
+            ...entry, index: position, originalNo: position + 1,
+            // 释义只放纯释义（相同的去重）；来源词库单独放 libraryNames，供小标签显示。
+            meaning: uniqueWordIds(entry.references.map(ref => String(ref.meaning || "").trim())).join("；"),
+            libraryNames: uniqueWordIds(entry.references.map(ref => ref.libraryName))
+          };
+        }),
         get currentDraftTask() { return data.combinedDraftTask; },
         set currentDraftTask(value) { data.combinedDraftTask = value; }
       };
@@ -3763,6 +3782,12 @@
       applyAllDataImportObject(imported);
     }
 
+    // 合并听写里标注单词来自哪个词库的小号灰色标签；单库词条没有 libraryNames，返回空串。
+    function libraryTagHtml(word) {
+      const names = Array.isArray(word?.libraryNames) ? word.libraryNames : [];
+      return names.map(name => '<span class="tag library-tag">' + escapeHtml(name) + '</span>').join("");
+    }
+
     function sourceTagHtml(sources) {
       const list = Array.isArray(sources) ? sources : [sources];
       if (list.length > 1) return '<span class="tag multi">多重来源</span>';
@@ -4535,7 +4560,7 @@
           <div class="player">
             <div class="player-progress-area">
               <div class="progress-big">第 ${dictationIndex + 1} / ${total} 个</div>
-              ${currentWord?.references ? '<div class="small muted">所属词库：' + escapeHtml([...new Set(currentWord.references.map(ref => ref.libraryName))].join("、")) + '</div>' : ""}
+              ${currentWord?.libraryNames?.length ? '<div class="small muted">' + libraryTagHtml(currentWord) + '</div>' : ""}
               <button id="goMarkBtn" class="player-go-mark-btn">全部播放完成，进入标记错误</button>
             </div>
             <button class="ghost player-settings-toggle" id="togglePlayerSettingsBtn" type="button">语速与声音</button>
@@ -4588,7 +4613,7 @@
         pieces.push('<div class="notice"><span class="strong">英文：</span>' + escapeHtml(word?.word || "") + '</div>');
       }
       if (lib.settings.showAnswerMeaning) {
-        pieces.push('<div class="notice"><span class="strong">中文释义：</span>' + escapeHtml(word?.meaning || "无") + '</div>');
+        pieces.push('<div class="notice"><span class="strong">中文释义：</span>' + escapeHtml(word?.meaning || "无") + libraryTagHtml(word) + '</div>');
       }
       return pieces.join("") || '<div class="small muted" style="grid-column:1 / -1">默认隐藏答案。打开开关后，下一词也会保持显示。</div>';
     }
@@ -4616,7 +4641,6 @@
                   <th>英文</th>
                   <th>中文释义</th>
                   <th>来源</th>
-                  ${task.parts ? "<th>所属词库</th>" : ""}
                 </tr>
               </thead>
               <tbody>
@@ -4628,9 +4652,8 @@
                       <td><input type="checkbox" data-wrong-check value="${escapeHtml(id)}" ${(task.checkedWrongWordIds || []).includes(id) ? "checked" : ""}></td>
                       <td>${word ? word.index + 1 : "-"}</td>
                       <td class="word-cell">${escapeHtml(word?.word || id)}</td>
-                      <td>${escapeHtml(word?.meaning || "")}</td>
+                      <td>${escapeHtml(word?.meaning || "")}${libraryTagHtml(word)}</td>
                       <td>${sourceTagHtml(sources)}</td>
-                      ${task.parts ? '<td>' + escapeHtml([...new Set((word?.references || []).map(ref => ref.libraryName))].join("、")) + '</td>' : ""}
                     </tr>
                   `;
                 }).join("")}
