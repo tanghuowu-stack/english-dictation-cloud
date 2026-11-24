@@ -25,7 +25,7 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
     steps:
-      - name: Query Supabase through the Data REST API
+      - name: Query Supabase through the GraphQL API
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -48,12 +48,12 @@ jobs:
           response_file="$(mktemp)"
           trap 'rm -f "${response_file}"' EXIT
 
-          # This selects at most one existing ID. RLS remains active, and no data is
-          # inserted, updated, or deleted. An anonymous RLS response may be an empty
-          # JSON array; it still executes a real Postgres SELECT through PostgREST.
+          # pg_graphql resolves this query inside Postgres. __typename reads no
+          # application rows and does not insert, update, or delete any data.
           set +e
           http_status="$(
             curl \
+              --request POST \
               --silent \
               --show-error \
               --retry 3 \
@@ -63,9 +63,10 @@ jobs:
               --max-time 45 \
               --output "${response_file}" \
               --write-out "%{http_code}" \
-              --header "apikey: ${SUPABASE_ANON_KEY}" \
-              --header "Accept: application/json" \
-              "${SUPABASE_URL%/}/rest/v1/libraries?select=id&limit=1"
+              --header "apiKey: ${SUPABASE_ANON_KEY}" \
+              --header "Content-Type: application/json" \
+              --data-raw '{"query":"query Keepalive { __typename }","variables":{}}' \
+              "${SUPABASE_URL%/}/graphql/v1"
           )"
           curl_exit_code=$?
           set -e
@@ -82,6 +83,14 @@ jobs:
               head -c 2000 "${response_file}"
               echo
             fi
+            exit 1
+          fi
+
+          if ! jq -e '(.data.__typename == "Query") and ((.errors // []) | length == 0)' "${response_file}" > /dev/null; then
+            echo "::error::Supabase keepalive query returned an unexpected GraphQL response."
+            echo "Response body (first 2000 bytes):"
+            head -c 2000 "${response_file}"
+            echo
             exit 1
           fi
 
