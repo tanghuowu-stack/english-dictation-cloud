@@ -1,0 +1,90 @@
+name: Supabase keepalive
+
+# This repository is public. GitHub may disable scheduled workflows after
+# 60 days without repository activity; re-enable this workflow in Actions if needed.
+on:
+  # GitHub cron uses UTC. 06:17 UTC is 14:17 in Asia/Taipei.
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    name: Run read-only database query
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Query Supabase through the Data REST API
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "${SUPABASE_URL}" ]]; then
+            echo "::error::Missing GitHub Actions secret: SUPABASE_URL"
+            exit 1
+          fi
+
+          if [[ -z "${SUPABASE_ANON_KEY}" ]]; then
+            echo "::error::Missing GitHub Actions secret: SUPABASE_ANON_KEY"
+            exit 1
+          fi
+
+          if [[ "${SUPABASE_URL}" != https://* ]]; then
+            echo "::error::SUPABASE_URL must use HTTPS."
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          trap 'rm -f "${response_file}"' EXIT
+
+          # This selects at most one existing ID. RLS remains active, and no data is
+          # inserted, updated, or deleted. An anonymous RLS response may be an empty
+          # JSON array; it still executes a real Postgres SELECT through PostgREST.
+          set +e
+          http_status="$(
+            curl \
+              --silent \
+              --show-error \
+              --retry 3 \
+              --retry-all-errors \
+              --retry-delay 2 \
+              --connect-timeout 15 \
+              --max-time 45 \
+              --output "${response_file}" \
+              --write-out "%{http_code}" \
+              --header "apikey: ${SUPABASE_ANON_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              --header "Accept: application/json" \
+              "${SUPABASE_URL%/}/rest/v1/libraries?select=id&limit=1"
+          )"
+          curl_exit_code=$?
+          set -e
+
+          if (( curl_exit_code != 0 )); then
+            echo "::error::Supabase keepalive request failed (curl exit ${curl_exit_code})."
+            exit "${curl_exit_code}"
+          fi
+
+          if [[ ! "${http_status}" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Supabase keepalive query returned HTTP ${http_status}."
+            if [[ -s "${response_file}" ]]; then
+              echo "Response body (first 2000 bytes):"
+              head -c 2000 "${response_file}"
+              echo
+            fi
+            exit 1
+          fi
+
+          response_bytes="$(wc -c < "${response_file}" | tr -d ' ')"
+          echo "Supabase keepalive query succeeded (HTTP ${http_status}, ${response_bytes} response bytes)."
