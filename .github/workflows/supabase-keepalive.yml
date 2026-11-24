@@ -56,9 +56,6 @@ jobs:
               --request GET \
               --silent \
               --show-error \
-              --retry 3 \
-              --retry-all-errors \
-              --retry-delay 2 \
               --connect-timeout 15 \
               --max-time 45 \
               --output "${response_file}" \
