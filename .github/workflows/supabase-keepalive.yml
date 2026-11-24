@@ -3,9 +3,10 @@ name: Supabase keepalive
 # This repository is public. GitHub may disable scheduled workflows after
 # 60 days without repository activity; re-enable this workflow in Actions if needed.
 on:
-  # GitHub cron uses UTC. 06:17 UTC is 14:17 in Asia/Taipei.
+  # GitHub cron uses UTC. These run at 14:17 and 02:17 in Asia/Taipei.
   schedule:
     - cron: "17 6 * * *"
+    - cron: "17 18 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +26,7 @@ jobs:
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
     steps:
-      - name: Query Supabase through the GraphQL API
+      - name: Query dedicated keepalive table
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -48,12 +49,10 @@ jobs:
           response_file="$(mktemp)"
           trap 'rm -f "${response_file}"' EXIT
 
-          # pg_graphql resolves this query inside Postgres. __typename reads no
-          # application rows and does not insert, update, or delete any data.
           set +e
           http_status="$(
             curl \
-              --request POST \
+              --request GET \
               --silent \
               --show-error \
               --retry 3 \
@@ -63,10 +62,8 @@ jobs:
               --max-time 45 \
               --output "${response_file}" \
               --write-out "%{http_code}" \
-              --header "apiKey: ${SUPABASE_ANON_KEY}" \
-              --header "Content-Type: application/json" \
-              --data-raw '{"query":"query Keepalive { __typename }","variables":{}}' \
-              "${SUPABASE_URL%/}/graphql/v1"
+              --header "apikey: ${SUPABASE_ANON_KEY}" \
+              "${SUPABASE_URL%/}/rest/v1/supabase_keepalive?select=id%2Cmarker&id=eq.1&marker=eq.ok"
           )"
           curl_exit_code=$?
           set -e
@@ -76,23 +73,56 @@ jobs:
             exit "${curl_exit_code}"
           fi
 
-          if [[ ! "${http_status}" =~ ^2[0-9][0-9]$ ]]; then
+          if [[ "${http_status}" != "200" ]]; then
             echo "::error::Supabase keepalive query returned HTTP ${http_status}."
-            if [[ -s "${response_file}" ]]; then
-              echo "Response body (first 2000 bytes):"
-              head -c 2000 "${response_file}"
-              echo
-            fi
             exit 1
           fi
 
-          if ! jq -e '(.data.__typename == "Query") and ((.errors // []) | length == 0)' "${response_file}" > /dev/null; then
-            echo "::error::Supabase keepalive query returned an unexpected GraphQL response."
-            echo "Response body (first 2000 bytes):"
-            head -c 2000 "${response_file}"
-            echo
+          if ! jq -e 'length == 1 and .[0].id == 1 and .[0].marker == "ok"' "${response_file}" > /dev/null; then
+            echo "::error::Supabase keepalive query returned unexpected data."
             exit 1
           fi
 
           response_bytes="$(wc -c < "${response_file}" | tr -d ' ')"
           echo "Supabase keepalive query succeeded (HTTP ${http_status}, ${response_bytes} response bytes)."
+
+      - name: Verify anon permission boundaries
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          api_url="${SUPABASE_URL%/}/rest/v1"
+
+          assert_denied() {
+            local operation="$1"
+            local method="$2"
+            local path="$3"
+            local body="${4:-}"
+            local args=(
+              --request "${method}"
+              --silent
+              --show-error
+              --output /dev/null
+              --write-out "%{http_code}"
+              --header "apikey: ${SUPABASE_ANON_KEY}"
+              --header "Content-Type: application/json"
+            )
+
+            if [[ -n "${body}" ]]; then
+              args+=(--data-raw "${body}")
+            fi
+
+            local status
+            status="$(curl "${args[@]}" "${api_url}${path}")"
+            if [[ ! "${status}" =~ ^(401|403)$ ]]; then
+              echo "::error::${operation} was not rejected by permissions (HTTP ${status})."
+              exit 1
+            fi
+            echo "${operation} correctly denied (HTTP ${status})."
+          }
+
+          assert_denied "INSERT keepalive row" "POST" "/supabase_keepalive" '{"id":2,"marker":"ok"}'
+          assert_denied "UPDATE keepalive row" "PATCH" "/supabase_keepalive?id=eq.1" '{"marker":"ok"}'
+          assert_denied "DELETE keepalive row" "DELETE" "/supabase_keepalive?id=eq.999"
+          assert_denied "SELECT existing business table" "GET" "/libraries?select=id&limit=1"
