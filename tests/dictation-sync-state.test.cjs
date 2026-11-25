@@ -189,3 +189,30 @@ test('draft changes and pending metadata survive refresh without mixing them int
   const {learningSnapshot}=await stateModule();
   assert.equal('dictationSyncJournal' in learningSnapshot(saved),false);
 });
+
+test('acknowledging the original device also disables legacy history inference on its next reload', () => {
+  const {ctx,storage}=isolatedApp();
+  const old=sample();
+  storage.set('family_english_dictation_v1',JSON.stringify(old));
+  vm.runInContext('loadData()',ctx);
+  const raw=ctx.readDictationSyncLocal();
+  assert.equal(ctx.checkpointDictationSync(raw,{journal:{owner:'uid',revision:1},pending:false}),true);
+  assert.equal(ctx.getLocalDictationDataForCloudUpload().losslessCloudStateVersion,1);
+  const {ctx:next,storage:nextStorage}=isolatedApp();
+  nextStorage.set('family_english_dictation_v1',ctx.readDictationSyncLocal());
+  vm.runInContext('migrateLibrary = () => { throw Error("legacy migration called"); }; loadData()',next);
+});
+
+test('legacy records without an ID may be identified by an unambiguous Day without inserting a field', async () => {
+  const {learningSnapshot,validLearningSnapshot}=await stateModule();
+  const data=sample();
+  data.libraries[0].dailyRecords=[{dayNumber:1},{dayNumber:2,recordId:null}];
+  assert.equal(validLearningSnapshot(data),true);
+  const records=learningSnapshot(data).libraries[0].dailyRecords;
+  assert.equal(Object.hasOwn(records[0],'recordId'),false);
+  assert.equal(records[1].recordId,null);
+  records.push({dayNumber:1});
+  assert.equal(validLearningSnapshot(data),true);
+  data.libraries[0].dailyRecords.push({dayNumber:1});
+  assert.equal(validLearningSnapshot(data),false);
+});

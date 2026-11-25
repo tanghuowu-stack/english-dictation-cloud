@@ -2275,6 +2275,9 @@
         pendingCloudUpload: pending,
         pendingCloudUploadSince: pending ? previous.pendingCloudUploadSince || new Date().toISOString() : null
       });
+      // Once this device has acknowledged a versioned snapshot, later reloads
+      // must not re-run legacy history inference even on the original device.
+      if (journal.revision > 0) next.losslessCloudStateVersion = 1;
       const raw = JSON.stringify(next);
       if (raw !== expectedRaw) localStorage.setItem(STORAGE_KEY, raw);
       lastStoredLearningRaw = raw;
@@ -2289,6 +2292,7 @@
         data.dictationSyncJournal = next.dictationSyncJournal;
         data.pendingCloudUpload = next.pendingCloudUpload;
         data.pendingCloudUploadSince = next.pendingCloudUploadSince;
+        if (next.losslessCloudStateVersion === 1) data.losslessCloudStateVersion = 1;
       }
       return true;
     };

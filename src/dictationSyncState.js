@@ -19,8 +19,11 @@ export function validLearningSnapshot(data) {
       || !lib.settings || typeof lib.settings !== 'object' || Array.isArray(lib.settings)
       || !Array.isArray(lib.words) || !Array.isArray(lib.dailyRecords)) return false;
     ids.add(lib.libraryId);
-    for (const [rows, key] of [[lib.words, 'id'], [lib.dailyRecords, 'recordId']]) {
-      const rowIds = rows.map(row => row?.[key]);
+    for (const [rows, identity] of [
+      [lib.words, word => word?.id],
+      [lib.dailyRecords, record => record?.recordId || (Number(record?.dayNumber) > 0 ? 'day:' + record.dayNumber : null)]
+    ]) {
+      const rowIds = rows.map(identity);
       if (rowIds.some(id => typeof id !== 'string' || !id) || new Set(rowIds).size !== rows.length) return false;
     }
   }
