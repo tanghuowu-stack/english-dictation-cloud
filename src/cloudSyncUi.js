@@ -1,13 +1,12 @@
 import { cloudConfigurationMessage, isCloudConfigured, supabase } from "./supabaseClient.js";
 import {
-  deleteCloudSessionBySourceLocalId,
   downloadCloudDataForLocalStorage,
   getCloudDataSummary,
-  getCloudFreshnessSignals,
   getCurrentUser,
-  getCurrentUserFromSession,
-  uploadLocalDataToCloud
+  getCurrentUserFromSession
 } from "./cloudRepository.js";
+import { learningFingerprint, learningSnapshot, readDictationRevision, readDictationState, writeDictationState } from "./dictationSyncState.js";
+import { runDictationSyncCycle } from "./dictationSyncCycle.js";
 
 let authListenerBound = false;
 let lastAutoUploadMessage = "";
@@ -148,155 +147,150 @@ function validateLocalDataForAutoUpload(localData) {
   return { valid: reasons.length === 0, reasons, summary };
 }
 
-async function autoUploadAfterDictation() {
-  _autoUploadInProgress = true;
-  if (typeof window.markPendingCloudUpload === "function") window.markPendingCloudUpload();
-  setAutoUploadStatus("本次听写已保存到本机，正在自动上传云端...", false, false);
+
+let syncInFlight = null;
+let syncTimer = null;
+let lastCheckAt = 0;
+let retryDelay = 5000;
+let syncAgain = false;
+let localFork = false;
+
+function statusFromLocal() {
+  try { return getLocalDataSnapshot() || {}; }
+  catch { return {}; }
+}
+
+function paintSyncStatus() {
+  const details = document.getElementById("dictationSyncDetails");
+  if (!details) return;
+  const local = statusFromLocal();
+  const journal = local.dictationSyncJournal || {};
+  const problem = localFork ? "另一标签页已保存较新的本机数据。请导出本页备份再核对。" : journal.error;
+  const pending = Boolean(local.pendingCloudUpload);
+  const label = document.getElementById("dictationSyncLabel");
+  details.hidden = !isCloudConfigured;
+  details.dataset.problem = problem ? "true" : "false";
+  const labelText = problem ? "同步需注意" : syncInFlight ? "同步中" : pending ? "待同步"
+    : journal.lastSuccessAt ? "已同步" : "本地保存";
+  if (label.textContent !== labelText) label.textContent = labelText;
+  document.getElementById("dictationSyncMessage").textContent = [
+    problem, pending ? "本机有待同步数据" : null,
+    journal.lastSuccessAt ? "最近成功：" + new Date(journal.lastSuccessAt).toLocaleString("zh-CN") : "尚无已确认的云端同步"
+  ].filter(Boolean).join(" · ");
+  document.getElementById("dictationSyncNow").disabled = Boolean(syncInFlight || localFork);
+}
+
+function showLocalFork() {
+  localFork = true;
+  paintSyncStatus();
+}
+
+function scheduleSync(delay) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    autoSyncCloudToLocalIfNewer(true);
+  }, delay);
+}
+
+function queueSavedLearning() {
+  paintSyncStatus();
+  if (isCloudConfigured && !localFork) scheduleSync(1000);
+}
+
+function requestAutoUploadLocalData() { queueSavedLearning(); }
+function autoUploadAfterDictation() {
+  setAutoUploadStatus("听写已保存到本机；正在确认云端同步。");
+  queueSavedLearning();
+}
+
+// The local undo is already committed. Send it through the same checked
+// revision; never issue an independent DELETE against the previous account data.
+async function deleteSessionAndSync() { queueSavedLearning(); }
+
+async function userIsStill(owner) {
+  return (await getCurrentUserFromSession())?.id === owner;
+}
+
+async function checkRemote(owner, journal) {
+  const head = await readDictationRevision(supabase, owner);
+  if (!head) return null;
+  if (journal.owner === owner && journal.revision === head.revision && journal.baseHash) {
+    return { revision:head.revision, updatedAt:head.updated_at, hash:journal.baseHash };
+  }
+  return readDictationState(supabase, owner);
+}
+
+async function hasLegacy(owner) {
+  const { data, error } = await supabase.from("libraries").select("id").eq("owner_id", owner).limit(1);
+  if (error) throw error;
+  return Boolean(data?.length);
+}
+
+async function syncOnce() {
+  const startedRaw = window.readDictationSyncLocal();
+  if (!window.isCurrentDictationSyncLocal(startedRaw)) return "stale-tab";
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      setAutoUploadStatus("本次听写已保存到本机。当前未登录云端，未自动上传。", false, false);
-      return;
+    if (navigator.onLine === false) throw new Error("离线；学习数据已保存在本机。");
+    const result = await runDictationSyncCycle({
+      readLocal:window.readDictationSyncLocal, isCurrent:window.isCurrentDictationSyncLocal,
+      checkpoint:window.checkpointDictationSync, getUser:getCurrentUserFromSession, isOwner:userIsStill,
+      readRemote:checkRemote, hasLegacy,
+      writeRemote:(owner, revision, snapshot) => writeDictationState(supabase, owner, revision, snapshot)
+    });
+    retryDelay = 5000;
+    if (result === "pull") {
+      window.renderRestoredDictation?.();
+      showSyncToast("已同步最新学习数据");
     }
-    const localData = getLocalDataSnapshot();
-    const validation = validateLocalDataForAutoUpload(localData);
-    if (!validation.valid) {
-      setAutoUploadStatus("本地数据结构异常，已阻止自动上传云端，请先检查数据。", true, false);
-      return;
+    if (result === "push" || result === "ack") setAutoUploadStatus("已确认同步到云端。", false, true);
+    if (result === "conflict" || result === "signed-out") {
+      const error = statusFromLocal().dictationSyncJournal?.error;
+      if (error) setAutoUploadStatus(error, true);
     }
-    const result = await uploadLocalDataToCloud(localData);
-    if (result.blockedOlderData) {
-      setAutoUploadStatus("本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。请先从云端下载最新数据。", true, false);
-      return;
+    if (result === "changed") {
+      const latest = window.readDictationSyncLocal();
+      if (window.isCurrentDictationSyncLocal(latest)) scheduleSync(1500);
     }
-    if (result.failed > 0) {
-      const reason = result.failureReasons.join("；") || "未知错误";
-      setAutoUploadStatus(
-        "本次听写已保存到本机，但自动上传云端失败：" + reason + "。请稍后在工具页手动上传。",
-        true,
-        false
-      );
-      return;
-    }
-    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
-      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
-    }
-    if (typeof window.clearPendingCloudUpload === "function") window.clearPendingCloudUpload();
-    setAutoUploadStatus("本次听写已保存到本机，并已自动上传到云端。", false, true);
+    return result;
   } catch (error) {
-    setAutoUploadStatus(
-      "本次听写已保存到本机，但自动上传云端失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
-      true,
-      false
-    );
-  } finally {
-    _autoUploadInProgress = false;
+    const raw = window.readDictationSyncLocal();
+    const local = statusFromLocal();
+    const message = "云端同步未完成：" + (error?.message || "请求失败");
+    try {
+      window.checkpointDictationSync(raw, {
+        journal:{ ...local.dictationSyncJournal, error:message }, pending:Boolean(local.pendingCloudUpload)
+      });
+    } catch (storageError) {
+      console.warn("[cloudSync] 同步状态未能保存", storageError);
+    }
+    setAutoUploadStatus(message, true);
+    if (navigator.onLine !== false) {
+      scheduleSync(retryDelay);
+      retryDelay = Math.min(retryDelay * 3, 180000);
+    }
+    return "failed";
   }
 }
 
-// ── 词库/单词变更后统一自动上传入口（带 1000ms debounce 防抖）──────────────────────
-let _autoUploadTimer = null;
-
-async function _doAutoUploadForDataChange(reason) {
-  _autoUploadInProgress = true;
-  const prefix = "词库变更已保存到本机";
-  setAutoUploadStatus(prefix + "，正在自动上传云端...", false, false);
-  try {
-    const user = await getCurrentUser();
-    if (!user) {
-      setAutoUploadStatus(prefix + "。当前未登录云端，未自动上传。", false, false);
-      return;
-    }
-    const localData = getLocalDataSnapshot();
-    const validation = validateLocalDataForAutoUpload(localData);
-    if (!validation.valid) {
-      const reasons = validation.reasons.join("；");
-      setAutoUploadStatus(
-        prefix + "，但本地数据结构异常，已阻止自动上传：" + reasons + "。请先检查数据。",
-        true, false
-      );
-      return;
-    }
-    const result = await uploadLocalDataToCloud(localData);
-    if (result.blockedOlderData) {
-      setAutoUploadStatus(
-        "本机数据较旧，已阻止自动上传，避免覆盖云端最新数据。请先从云端下载最新数据。",
-        true, false
-      );
-      return;
-    }
-    if (result.failed > 0) {
-      const failReason = result.failureReasons.join("；") || "未知错误";
-      setAutoUploadStatus(
-        prefix + "，但自动上传云端失败：" + failReason + "。请稍后在工具页手动上传。",
-        true, false
-      );
-      return;
-    }
-    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
-      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
-    }
-    if (typeof window.clearPendingCloudUpload === "function") window.clearPendingCloudUpload();
-    setAutoUploadStatus(prefix + "，并已自动上传到云端。", false, true);
-  } catch (error) {
-    setAutoUploadStatus(
-      prefix + "，但自动上传云端失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
-      true, false
-    );
-  } finally {
-    _autoUploadInProgress = false;
+function autoSyncCloudToLocalIfNewer(force = false) {
+  if (!isCloudConfigured || localFork) return Promise.resolve("local-only");
+  if (syncInFlight) {
+    if (force) syncAgain = true;
+    return syncInFlight;
   }
+  if (!force && Date.now() - lastCheckAt < 60000) return Promise.resolve("cooldown");
+  lastCheckAt = Date.now();
+  const run = () => syncOnce();
+  syncInFlight = (navigator.locks?.request ? navigator.locks.request("dictation-learning-sync", run) : run())
+    .finally(() => {
+      syncInFlight = null;
+      if (syncAgain) { syncAgain = false; scheduleSync(1000); }
+      paintSyncStatus();
+    });
+  paintSyncStatus();
+  return syncInFlight;
 }
-
-function requestAutoUploadLocalData(reason) {
-  // 立即标记"待上传"，即使页面在防抖计时器触发前被关闭，重新打开后这个标记仍会保留
-  if (typeof window.markPendingCloudUpload === "function") window.markPendingCloudUpload();
-  if (_autoUploadTimer !== null) {
-    clearTimeout(_autoUploadTimer);
-    _autoUploadTimer = null;
-  }
-  _autoUploadTimer = setTimeout(() => {
-    _autoUploadTimer = null;
-    if (reason === "dictation-complete") {
-      autoUploadAfterDictation();
-    } else {
-      _doAutoUploadForDataChange(reason || "data-changed");
-    }
-  }, 1000);
-}
-
-// ── 撤销听写记录专用：先删云端对应 session，再上传本机最新快照 ────────────────────
-// Fix R5：参照 iPad 同步失败重试的思路，失败后 5 秒自动重试一次，而不是直接放弃、
-// 只能靠用户去工具页手动补传。
-const DELETE_SESSION_RETRY_DELAY_MS = 5000;
-
-async function deleteSessionAndSync(libraryLocalId, sessionSourceLocalId, isRetry = false) {
-  setAutoUploadStatus(
-    isRetry ? "正在重试将撤销的记录同步到云端..." : "记录已在本机删除，正在同步到云端...",
-    false, false
-  );
-  try {
-    const user = await getCurrentUser();
-    if (!user) {
-      setAutoUploadStatus("记录已在本机删除。当前未登录云端，未自动同步。", false, false);
-      return;
-    }
-    await deleteCloudSessionBySourceLocalId(libraryLocalId, sessionSourceLocalId);
-    requestAutoUploadLocalData("undo-record");
-  } catch (error) {
-    if (!isRetry) {
-      console.warn("[cloudSync] 撤销记录同步云端失败，5 秒后自动重试一次：", error?.message || error);
-      setAutoUploadStatus("本机记录已删除，云端同步失败，5 秒后自动重试...", true, false);
-      setTimeout(() => deleteSessionAndSync(libraryLocalId, sessionSourceLocalId, true), DELETE_SESSION_RETRY_DELAY_MS);
-      return;
-    }
-    setAutoUploadStatus(
-      "本机记录已删除，但云端同步失败：" + (error.message || "网络错误") + "。请稍后在工具页手动上传。",
-      true, false
-    );
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 function summarizeLibrary(library) {
   if (!library) {
@@ -374,44 +368,16 @@ function formatDiagnosticReport(localData, restoreResult, validation) {
   return lines.join("\n");
 }
 
-function formatUploadResult(result) {
-  const lines = [
-    "上传完成。",
-    "词库数量：" + result.libraries,
-    "单词数量：" + result.words,
-    "听写记录数量：" + result.sessions,
-    "学习进度数量：" + result.progress,
-    "失败数量：" + result.failed
-  ];
-  if (result.failureReasons.length) {
-    lines.push("失败原因：");
-    result.failureReasons.forEach(reason => lines.push("- " + reason));
-  } else {
-    lines.push("失败原因：无");
-  }
-  return lines.join("\n");
-}
 
 async function uploadLocalData(elements) {
-  const confirmUpload = window.requestAppConfirmation || (message => Promise.resolve(window.confirm(message)));
-  const confirmed = await confirmUpload(
-    "上传前请先导出本地 JSON 备份。本操作会把当前浏览器里的词库、单词、听写记录、错词进度上传到当前登录的云端账号。不会清空本地数据，也不会从云端下载覆盖本机数据。确定继续吗？",
-    "上传本地数据"
-  );
-  if (!confirmed) return;
-
-  elements.upload.disabled = true;
-  elements.summary.disabled = true;
-  elements.diagnose.disabled = true;
-  setMessage(elements.actionMessage, "正在上传本地数据，请不要关闭页面...", false);
-  try {
-    const result = await uploadLocalDataToCloud(getLocalDataSnapshot());
-    setMessage(elements.actionMessage, formatUploadResult(result), result.failed > 0);
-  } catch (error) {
-    setMessage(elements.actionMessage, "上传失败：" + (error.message || "网络错误"), true);
-  } finally {
-    await refreshCloudStatus(elements);
-  }
+  setMessage(elements.actionMessage, "正在检查本机与云端版本…");
+  const result = await autoSyncCloudToLocalIfNewer(true);
+  const problem = statusFromLocal().dictationSyncJournal?.error;
+  setMessage(elements.actionMessage, problem || ({
+    push:"已上传并确认同步。", ack:"本机与云端数据一致。", pull:"本机已安全同步云端新版本。",
+    "stale-tab":"另一标签页已有更新。请先核对备份并重新打开本页。",
+    "signed-out":"请先登录云端。"
+  })[result] || "没有可立即同步的数据。", Boolean(problem || result === "stale-tab"));
 }
 
 async function showCloudSummary(elements) {
@@ -476,9 +442,13 @@ function formatRestoreResult(result) {
 }
 
 async function downloadCloudData(elements) {
+  if (syncInFlight || localFork) {
+    setMessage(elements.actionMessage, "请等待同步结束，或先处理本机标签页冲突。", true);
+    return;
+  }
   const confirmDownload = window.requestAppConfirmation || (message => Promise.resolve(window.confirm(message)));
   const confirmed = await confirmDownload(
-    "请先在当前设备导出本地 JSON 备份。本操作会把云端数据下载到当前浏览器，并覆盖当前浏览器 localStorage。不会删除云端数据。确定继续吗？",
+    "请先导出本机 JSON 备份。本操作会替换当前浏览器的学习数据，包括任何未同步记录和草稿。不会修改云端数据。确定继续吗？",
     "从云端恢复数据"
   );
   if (!confirmed) return;
@@ -490,9 +460,10 @@ async function downloadCloudData(elements) {
   elements.reload.hidden = true;
   setMessage(elements.actionMessage, "正在读取并还原云端数据，请不要关闭页面...", false);
   try {
+    const expectedRaw = window.readDictationSyncLocal();
     const currentLocalData = getLocalDataSnapshot();
     const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0", currentLocalData?.activeLibraryId || null);
-    const validation = validateRestoredData(result.restoredData, result.cloudCounts || {});
+    const validation = result.revision ? { valid: true } : validateRestoredData(result.restoredData, result.cloudCounts || {});
     if (!validation.valid) {
       setMessage(
         elements.actionMessage,
@@ -501,7 +472,24 @@ async function downloadCloudData(elements) {
       );
       return;
     }
-    replaceLocalData(result.restoredData);
+    const owner = result.cloudCounts?.userId;
+    if (!await userIsStill(owner)) throw new Error("登录账号发生变化，请重新检查。");
+    if (result.revision) {
+      const baseHash = await learningFingerprint(learningSnapshot(result.restoredData));
+      const journal = { owner, revision:result.revision, baseHash, lastSuccessAt:new Date().toISOString(), pristine:false, error:null };
+      if (!window.checkpointDictationSync(expectedRaw, { journal, pending:false, replacement:result.restoredData, preserveBefore:true })) {
+        throw new Error("读取期间本机学习数据已变化；请先核对，再重新恢复。");
+      }
+    } else {
+      // Old accounts retain their manual read-only recovery option. Save a
+      // device backup first; the legacy projection has no complete revision.
+      if (!window.checkpointDictationSync(expectedRaw, { journal:currentLocalData.dictationSyncJournal || {},
+        pending:Boolean(currentLocalData.pendingCloudUpload), preserveBefore:true })) {
+        throw new Error("读取期间本机学习数据已变化；请先核对，再重新恢复。");
+      }
+      replaceLocalData(result.restoredData);
+    }
+    paintSyncStatus();
     setMessage(elements.actionMessage, formatRestoreResult(result), result.failed > 0);
     elements.reload.hidden = false;
   } catch (error) {
@@ -558,70 +546,7 @@ async function signOut(elements) {
   }
 }
 
-// ── 自动双向同步：检查云端是否比本机新 ──────────────────────────────────────────
-let _autoSyncInProgress = false;
-// 上传期间屏蔽拉取，防止读到云端中间状态（库行已更新但 user_word_progress 还未写入）
-let _autoUploadInProgress = false;
-// iOS PWA 下 visibilitychange 极其频繁，60 秒内不重复发起 freshness 检查
-let _lastAutoSyncCheckTime = 0;
-const AUTO_SYNC_MIN_INTERVAL_MS = 60 * 1000;
-// Fix iPad：检查因网络/认证未就绪失败时，不消耗冷却时间，改为短延迟后自动重试一次
-let _autoSyncRetryTimer = null;
-const AUTO_SYNC_RETRY_DELAY_MS = 5000;
-// Fix S4 兜底：pendingCloudUpload 卡住超过这个时长，强制清除，避免因未预料到的失败路径
-// （或未来类似 bug）导致这个标记永久卡死后续所有自动同步
-const PENDING_UPLOAD_STUCK_TIMEOUT_MS = 60 * 60 * 1000;
 
-async function checkCloudFreshness() {
-  // Fix iPad：优先用本地会话（不发网络请求）判断登录状态，减少这个高频检查对网络状态的依赖
-  const user = await getCurrentUserFromSession();
-  if (!user) return false;
-
-  const localData = getLocalDataSnapshot();
-  if (!localData || !Array.isArray(localData.libraries)) return false;
-
-  const libraries = localData.libraries;
-  if (!libraries.length) return false;
-
-  // Fix S1：getCloudFreshnessSignals 是按 user_id 聚合"该用户全部词库"的计数，
-  // 本地对比基准如果只统计 activeLibrary 一个词库，多词库账号下云端计数必然更大，
-  // 会被恒判为"云端更新"，触发下载+reload 死循环。这里改为本地也聚合全部词库，
-  // 与云端口径保持一致。
-  const localSessionCount = libraries.reduce((sum, lib) => {
-    return sum + (Array.isArray(lib.dailyRecords) ? lib.dailyRecords.length : 0);
-  }, 0);
-  const localMaxDay = libraries.reduce((max, lib) => {
-    const records = Array.isArray(lib.dailyRecords) ? lib.dailyRecords : [];
-    const libMax = records.length ? Math.max(...records.map(r => Number(r.dayNumber || 0))) : 0;
-    return Math.max(max, libMax);
-  }, 0);
-  const localLearnedCount = libraries.reduce((sum, lib) => {
-    return sum + (lib.words || []).filter(word => {
-      const day = Number(word.firstLearnDay);
-      return word.firstLearnDay != null && Number.isFinite(day) && day > 0;
-    }).length;
-  }, 0);
-
-  const signals = await getCloudFreshnessSignals();
-  if (!signals) return false;
-
-  if (signals.sessionCount > localSessionCount) return true;
-  if (signals.maxDayNumber > localMaxDay) return true;
-  if (signals.learnedCount > localLearnedCount) return true;
-
-  // 第四个信号：用 user_word_progress.updated_at 捕获"删除/撤销"等让数量减少的操作。
-  // 该字段在 uploadLocalDataToCloud 最后一步（Step5）才写入，不会在上传中途触发误判。
-  // 本机对比基准用 lib.updatedAt，它在 updateLocalLibraryUpdatedAt() 里与 Step5 同步更新。
-  if (signals.maxProgressUpdatedAt) {
-    const localMaxUpdatedAt = libraries.reduce((max, lib) => {
-      const ts = lib.updatedAt || "";
-      return ts > max ? ts : max;
-    }, "");
-    if (localMaxUpdatedAt && signals.maxProgressUpdatedAt > localMaxUpdatedAt) return true;
-  }
-
-  return false;
-}
 
 function showSyncToast(message) {
   let toast = document.getElementById("autoSyncToast");
@@ -655,161 +580,7 @@ function showSyncToast(message) {
   }, 1800);
 }
 
-// Fix S4：自动拉取覆盖本机前，如果本机还有未确认上传成功的变更，先尝试补传一次。
-// 补传成功后本机数据已经等于（或不落后于）云端，避免被随后的下载覆盖丢失；
-// 补传因网络等原因失败则放弃本次拉取，宁可这次不同步，也不覆盖本机未上传的变更。
-//
-// 但补传失败还有另一种情况：blockedOlderData —— uploadLocalDataToCloud 判断"本机数据本来就比
-// 云端旧"而主动拒绝上传。这种失败不是"本机有价值的新数据没传上去"，而是"本机数据确实过时"，
-// 覆盖它是安全、符合预期的。如果把这种失败也当成"跳过下载"处理，会导致一旦 pendingCloudUpload
-// 在本机落后于云端时被设为 true，就永远清不掉、永远补传失败、永远跳过下载 —— 一个自锁死循环
-// （这正是本机 Day 落后云端时实际发生过的问题）。所以这里返回结构化结果，让调用方能区分这两种
-// 失败原因，分别处理。
-async function tryUploadPendingLocalChanges() {
-  try {
-    const user = await getCurrentUser();
-    if (!user) {
-      console.warn("[cloudSync] 待上传变更补传跳过：当前未登录云端");
-      return { uploaded: false, blockedOlderData: false };
-    }
-    const localData = getLocalDataSnapshot();
-    const validation = validateLocalDataForAutoUpload(localData);
-    if (!validation.valid) {
-      console.warn("[cloudSync] 待上传变更补传跳过：本地数据结构校验未通过：", validation.reasons);
-      return { uploaded: false, blockedOlderData: false };
-    }
-    const result = await uploadLocalDataToCloud(localData);
-    if (result.blockedOlderData) {
-      console.warn(
-        "[cloudSync] 待上传变更补传被阻止：本机数据确实比云端旧，视为正常情况（不是数据丢失风险）：",
-        result.failureReasons
-      );
-      return { uploaded: false, blockedOlderData: true };
-    }
-    if (result.failed > 0) {
-      console.warn("[cloudSync] 待上传变更补传失败：", result.failureReasons);
-      return { uploaded: false, blockedOlderData: false };
-    }
-    if (typeof window.clearPendingCloudUpload === "function") window.clearPendingCloudUpload();
-    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
-      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
-    }
-    return { uploaded: true, blockedOlderData: false };
-  } catch (error) {
-    console.warn("[cloudSync] 待上传变更补传时发生异常：", error?.message || error);
-    return { uploaded: false, blockedOlderData: false };
-  }
-}
 
-async function autoSyncCloudToLocalIfNewer() {
-  if (_autoSyncInProgress) return;
-  if (_autoUploadInProgress) return;
-  // Fix2: iOS PWA visibilitychange 高频触发保护，60 秒内不重复发起网络检查
-  const now = Date.now();
-  if (now - _lastAutoSyncCheckTime < AUTO_SYNC_MIN_INTERVAL_MS) return;
-  _autoSyncInProgress = true;
-  // Fix iPad：只有确认本次检查真正跑完（没有因网络/认证异常报错）才消耗冷却时间，
-  // 否则 iOS 从后台恢复瞬间的一次失败检查会白白占用 60 秒冷却窗口，只能等 3 分钟定时器
-  let checkSucceeded = false;
-  try {
-    const isFresh = await checkCloudFreshness();
-    checkSucceeded = true;
-    if (!isFresh) return;
-
-    const currentLocalData = getLocalDataSnapshot();
-    // Fix3: 用户正在听写中（currentDraftTask 存在），跳过覆盖和刷新，不打断听写进度
-    const activeLib = (currentLocalData?.libraries || []).find(
-      lib => lib.libraryId === currentLocalData?.activeLibraryId
-    ) || (currentLocalData?.libraries || [])[0];
-    if (activeLib?.currentDraftTask || currentLocalData?.combinedDraftTask) return;
-
-    // Fix S4：本机存在未确认上传成功的变更时，先尝试补传，避免被本次下载覆盖丢失
-    if (currentLocalData?.pendingCloudUpload) {
-      // 兜底：标记卡住超过 1 小时还没清除，视为异常状态（例如未预料到的失败路径），强制清除，
-      // 避免这个标记以后再以别的形式变成永久死锁——只能靠开发者读代码才能发现
-      const since = currentLocalData.pendingCloudUploadSince
-        ? new Date(currentLocalData.pendingCloudUploadSince).getTime()
-        : 0;
-      const stuckMs = since ? Date.now() - since : Infinity;
-      if (stuckMs > PENDING_UPLOAD_STUCK_TIMEOUT_MS) {
-        console.warn(
-          "[cloudSync] pendingCloudUpload 标记已卡住超过 1 小时，视为异常状态，强制清除：",
-          { pendingCloudUploadSince: currentLocalData.pendingCloudUploadSince, stuckMinutes: Math.round(stuckMs / 60000) }
-        );
-        if (typeof window.clearPendingCloudUpload === "function") window.clearPendingCloudUpload();
-      } else {
-        const uploadOutcome = await tryUploadPendingLocalChanges();
-        if (uploadOutcome.uploaded) {
-          const stillFresh = await checkCloudFreshness();
-          if (!stillFresh) return;
-        } else if (uploadOutcome.blockedOlderData) {
-          // 本机数据确认比云端旧：这不是"本地新数据没传上去"，覆盖是安全、符合预期的。
-          // 清掉标记后继续往下走下载覆盖，不能在这里 return，否则会永远卡在这个分支。
-          console.warn("[cloudSync] 本机数据确认落后于云端，清除 pendingCloudUpload 标记并继续执行下载覆盖");
-          if (typeof window.clearPendingCloudUpload === "function") window.clearPendingCloudUpload();
-        } else {
-          // 真正的失败原因（网络错误等），本地可能确实有未同步的新变更，保守起见跳过本次下载
-          console.warn("[cloudSync] 本地待上传变更补传失败（非本机数据过时），本次跳过下载覆盖以保护本地数据");
-          return;
-        }
-      }
-    }
-
-    const result = await downloadCloudDataForLocalStorage(currentLocalData?.version || "1.0.0", currentLocalData?.activeLibraryId || null);
-    const validation = validateRestoredData(result.restoredData, result.cloudCounts || {});
-    if (!validation.valid) {
-      console.warn("[cloudSync] 自动同步下载的数据未通过校验，已跳过本次覆盖：", validation.reasons);
-      return;
-    }
-
-    // Fix R9：downloadCloudDataForLocalStorage 是一系列 await 网络请求，耗时较长。
-    // 如果用户恰好在这段时间内完成并提交了一次听写，_autoUploadInProgress 会在这期间被置 true。
-    // 顶部的前置检查发生在下载开始之前，读不到这个后来才出现的状态，这里在真正覆盖本机数据前
-    // 再检查一次，避免用刚下载的（可能还不包含这次听写的）云端数据覆盖掉本机刚提交的新记录。
-    if (_autoUploadInProgress) {
-      console.warn("[cloudSync] 拉取完成时检测到本机正在上传（提交了新的听写记录），放弃本次覆盖以避免冲突");
-      return;
-    }
-
-    // 用户可能在下载期间刚开始合并听写，覆盖前再次保护本机场次。
-    if (getLocalDataSnapshot()?.combinedDraftTask) return;
-
-    replaceLocalData(result.restoredData);
-    // Fix1: 更新本机 lib.updatedAt 到当前时刻，使其 ≥ 云端 user_word_progress.updated_at，
-    // 防止下次 checkCloudFreshness 的第4信号（时间戳比较）再次误判为"云端更新"而触发死循环
-    if (typeof window.updateLocalLibraryUpdatedAt === "function") {
-      window.updateLocalLibraryUpdatedAt(new Date().toISOString());
-    }
-    // Fix S6/S3：数据已经正常同步下载，但云端存在被跳过的坏记录，或者有词库上次上传未完整跑完——
-    // 不阻塞本次同步，只用一个不打断使用的 toast 提示用户，技术细节已经在 console.warn 里了。
-    const cloudCounts = result.cloudCounts || {};
-    if (Number(cloudCounts.skippedSessionCount || 0) > 0 || cloudCounts.hasIncompleteUpload) {
-      showSyncToast("已同步最新数据，但部分历史数据可能不完整，建议手动检查");
-    } else {
-      showSyncToast("已同步最新数据");
-    }
-    setTimeout(() => window.location.reload(), 500);
-  } catch (error) {
-    // Fix iPad：不再完全静默，留一条 console.warn 方便以后排查"为什么没自动同步"
-    console.warn("[cloudSync] 自动同步检查失败，稍后会自动重试：", error?.message || error);
-  } finally {
-    _autoSyncInProgress = false;
-    if (checkSucceeded) {
-      _lastAutoSyncCheckTime = Date.now();
-      if (_autoSyncRetryTimer !== null) {
-        clearTimeout(_autoSyncRetryTimer);
-        _autoSyncRetryTimer = null;
-      }
-    } else if (_autoSyncRetryTimer === null) {
-      // Fix iPad：检查失败（多半是网络栈/token 还没就绪），5 秒后自动重试一次，
-      // 不必等到下一次 visibilitychange 或 3 分钟定时器
-      _autoSyncRetryTimer = setTimeout(() => {
-        _autoSyncRetryTimer = null;
-        autoSyncCloudToLocalIfNewer();
-      }, AUTO_SYNC_RETRY_DELAY_MS);
-    }
-  }
-}
 
 // ── 独立的 PWA 代码版本检查（与上面的云端数据同步逻辑完全独立，不共用任何状态）─────────
 // 背景：iOS "添加到主屏幕" 的独立 PWA 窗口用的是一套和普通 Safari 标签页不同的页面缓存/
@@ -907,6 +678,8 @@ async function mount() {
 
 window.cloudSync = {
   mount,
+  queueSavedLearning,
+  showLocalFork,
   autoUploadAfterDictation,
   requestAutoUploadLocalData,
   autoSyncCloudToLocalIfNewer,
@@ -916,12 +689,23 @@ window.cloudSync = {
   checkAppVersionAndReloadIfStale
 };
 
+const syncNowButton = document.getElementById("dictationSyncNow");
+if (syncNowButton) syncNowButton.onclick = () => autoSyncCloudToLocalIfNewer(true);
+if (typeof window.addEventListener === "function") {
+  window.addEventListener("online", () => autoSyncCloudToLocalIfNewer(true));
+  window.addEventListener("offline", () => autoSyncCloudToLocalIfNewer(true));
+  window.addEventListener("storage", event => {
+    if (event.key === null || event.key === "family_english_dictation_v1") paintSyncStatus();
+  });
+}
+paintSyncStatus();
+
 if (supabase && !authListenerBound) {
   authListenerBound = true;
   supabase.auth.onAuthStateChange((event) => {
     window.setTimeout(() => mount(), 0);
-    if (event === "SIGNED_IN") {
-      window.setTimeout(() => autoSyncCloudToLocalIfNewer(), 0);
+    if (["INITIAL_SESSION", "SIGNED_IN", "SIGNED_OUT", "TOKEN_REFRESHED"].includes(event)) {
+      window.setTimeout(() => autoSyncCloudToLocalIfNewer(true), 0);
     }
   });
 }

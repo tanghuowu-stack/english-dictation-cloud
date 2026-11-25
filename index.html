@@ -1836,6 +1836,11 @@
       border-radius: 10px;
     }
     .study-library-plan fieldset:disabled { opacity: .55; }
+    .sync-indicator { position: relative; font-size: .78rem; font-weight: 500; color: var(--muted, #666); }
+    .sync-indicator summary { cursor: pointer; white-space: nowrap; }
+    .sync-indicator[data-problem="true"] { color: var(--danger, #a04137); font-weight: 650; }
+    .sync-indicator-panel { position: absolute; z-index: 20; inset-inline-start: 0; margin-top: 6px; width: min(240px, 52vw); }
+    .sync-indicator-panel button { margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -1844,6 +1849,13 @@
       <div class="site-title-row">
         <img src="./public/icons/app-icon.png" class="site-logo" alt="英语听写">
         <h1>英语听写</h1>
+        <details class="sync-indicator" id="dictationSyncDetails" hidden>
+          <summary id="dictationSyncLabel" aria-live="polite">本地保存</summary>
+          <div class="sync-indicator-panel card">
+            <div class="small" id="dictationSyncMessage" aria-live="polite"></div>
+            <button class="ghost small" id="dictationSyncNow" type="button">立即同步</button>
+          </div>
+        </details>
       </div>
       <div class="library-switcher">
         <span class="small muted">当前词库</span>
@@ -2128,8 +2140,16 @@
       };
     }
 
+    const SYNC_FORK_KEY = STORAGE_KEY + "_sync_conflict_backup";
+    const SYNC_DEVICE_KEYS = new Set(["pendingCloudUpload", "pendingCloudUploadSince", "losslessCloudStateVersion", "dictationSyncJournal"]);
+    let lastStoredLearningRaw = null;
+    let lastSavedLearning = null;
+    let bootstrappingLearning = false;
+    const learningString = value => JSON.stringify(Object.fromEntries(Object.entries(value).filter(([key]) => !SYNC_DEVICE_KEYS.has(key))));
+
     function loadData() {
       const raw = localStorage.getItem(STORAGE_KEY);
+      lastStoredLearningRaw = raw;
       if (raw) {
         try {
           data = JSON.parse(raw);
@@ -2144,7 +2164,16 @@
           activeLibraryId: null,
           libraries: []
         };
-        createLibrary("我的词库", false);
+        bootstrappingLearning = true;
+        try { createLibrary("我的词库", false); }
+        finally { bootstrappingLearning = false; }
+        data.dictationSyncJournal = { pristine: true };
+      }
+      // A versioned cloud snapshot is already an exact persisted state. Legacy
+      // migrations may infer values from history; they must not run on it.
+      if (data.losslessCloudStateVersion === 1) {
+        lastSavedLearning = learningString(data);
+        return;
       }
       data.version = data.version || APP_VERSION;
       data.libraries.forEach(lib => {
@@ -2152,14 +2181,42 @@
         migrateWrongReviewRule(lib, { preserveDraft: true });
       });
       if (!data.activeLibraryId && data.libraries[0]) data.activeLibraryId = data.libraries[0].libraryId;
-      saveData();
+      saveData({ initial: true });
     }
 
-    function saveData() {
+    function saveData({ initial = false } = {}) {
       if (!data) return;
-      data.version = APP_VERSION;
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        const rawOnDisk = localStorage.getItem(STORAGE_KEY);
+        const nextLearning = learningString(data);
+        const changed = nextLearning !== lastSavedLearning;
+        if (lastStoredLearningRaw !== rawOnDisk) {
+          if (!changed) return true; // An inactive tab cannot write its stale copy on unload.
+          const other = rawOnDisk ? JSON.parse(rawOnDisk) : null;
+          if (other && learningString(other) === lastSavedLearning) {
+            // A status-only checkpoint in another tab is not a learning conflict.
+            lastStoredLearningRaw = rawOnDisk;
+            for (const key of SYNC_DEVICE_KEYS) {
+              if (Object.hasOwn(other, key)) data[key] = other[key];
+              else delete data[key];
+            }
+          } else {
+            if (!localStorage.getItem(SYNC_FORK_KEY)) localStorage.setItem(SYNC_FORK_KEY, JSON.stringify(data));
+            window.cloudSync?.showLocalFork?.();
+            alert("另一标签页已更改本机学习数据，本次未覆盖。请先导出当前页数据，关闭其他标签后再核对。");
+            return false;
+          }
+        }
+        if (changed && !initial && !bootstrappingLearning) {
+          data.pendingCloudUploadSince = data.pendingCloudUploadSince || new Date().toISOString();
+          data.pendingCloudUpload = true;
+          data.dictationSyncJournal = { ...data.dictationSyncJournal, pristine: false };
+        }
+        const next = JSON.stringify(data);
+        if (next !== rawOnDisk) localStorage.setItem(STORAGE_KEY, next);
+        lastStoredLearningRaw = next;
+        lastSavedLearning = nextLearning;
+        if (changed && !initial && !bootstrappingLearning) window.cloudSync?.queueSavedLearning?.();
         return true;
       } catch (error) {
         console.error("[saveData] localStorage.setItem 失败：", error);
@@ -2177,11 +2234,18 @@
         throw new Error("这不是有效的全部数据 JSON");
       }
       const nextData = imported;
+      // A copied backup does not prove this browser is at that cloud revision.
+      // Never inherit account credentials/revisions from imported files.
+      nextData.dictationSyncJournal = { owner:data?.dictationSyncJournal?.owner, requiresReview:true };
+      nextData.pendingCloudUpload = true;
+      nextData.pendingCloudUploadSince = new Date().toISOString();
       nextData.version = nextData.version || APP_VERSION;
-      nextData.libraries.forEach(lib => {
-        migrateLibrary(lib);
-        migrateWrongReviewRule(lib, { preserveDraft: true });
-      });
+      if (nextData.losslessCloudStateVersion !== 1) {
+        nextData.libraries.forEach(lib => {
+          migrateLibrary(lib);
+          migrateWrongReviewRule(lib, { preserveDraft: true });
+        });
+      }
       const activeExists = nextData.libraries.some(lib => lib.libraryId === nextData.activeLibraryId);
       if (!activeExists) nextData.activeLibraryId = nextData.libraries[0]?.libraryId || null;
       data = nextData;
@@ -2194,6 +2258,42 @@
       const raw = localStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : null;
     };
+
+    window.readDictationSyncLocal = () => localStorage.getItem(STORAGE_KEY);
+    window.isCurrentDictationSyncLocal = raw => Boolean(raw && raw === lastStoredLearningRaw
+      && raw === localStorage.getItem(STORAGE_KEY) && data && learningString(data) === lastSavedLearning);
+
+    // Check again immediately before changing the browser projection; an edit
+    // made during any network request is never overwritten or marked as sent.
+    window.checkpointDictationSync = function(expectedRaw, { journal, pending, replacement, preserveBefore = false }) {
+      if (!window.isCurrentDictationSyncLocal(expectedRaw)) return false;
+      const previous = JSON.parse(expectedRaw);
+      let next = replacement ? { ...replacement, losslessCloudStateVersion: 1 } : previous;
+      if (preserveBefore) localStorage.setItem(STORAGE_KEY + "_before_manual_restore", expectedRaw);
+      Object.assign(next, {
+        dictationSyncJournal: journal,
+        pendingCloudUpload: pending,
+        pendingCloudUploadSince: pending ? previous.pendingCloudUploadSince || new Date().toISOString() : null
+      });
+      const raw = JSON.stringify(next);
+      if (raw !== expectedRaw) localStorage.setItem(STORAGE_KEY, raw);
+      lastStoredLearningRaw = raw;
+      lastSavedLearning = learningString(next);
+      if (replacement) {
+        data = next;
+        todaySummary = null;
+        dictationIndex = 0;
+        stopAutoPlay();
+      }
+      else {
+        data.dictationSyncJournal = next.dictationSyncJournal;
+        data.pendingCloudUpload = next.pendingCloudUpload;
+        data.pendingCloudUploadSince = next.pendingCloudUploadSince;
+      }
+      return true;
+    };
+
+    window.renderRestoredDictation = () => renderApp();
 
     window.validateCloudRestoredDataForImport = function(restoredData, cloudCounts = {}) {
       const reasons = [];
@@ -2287,6 +2387,17 @@
     };
 
     window.replaceLocalDictationDataFromCloud = function(restoredData) {
+      if (restoredData?.losslessCloudStateVersion === 1) {
+        if (!validateAllDataImportObject(restoredData) || !restoredData.libraries.some(lib => lib.libraryId === restoredData.activeLibraryId)) {
+          throw new Error("无效的云端学习快照");
+        }
+        // Persist before changing the live state; quota errors leave the old state intact.
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredData));
+        data = restoredData;
+        lastStoredLearningRaw = JSON.stringify(restoredData);
+        lastSavedLearning = learningString(restoredData);
+        return data;
+      }
       // 学习计划里勾了哪些词库、播放顺序：新版本上传时随词库设置一起存到云端（见 src/studyPlanSync.js），
       // 恢复数据里带着就用云端的，实现换设备同步；旧数据里没有就沿用本机原来的。
       // 两种情况都只保留还存在的词库，避免自动同步后合并听写退回单库。
@@ -2303,39 +2414,6 @@
         saveData();
       }
       return result;
-    };
-
-    window.updateLocalLibraryUpdatedAt = function(isoTimestamp) {
-      const ts = isoTimestamp || new Date().toISOString();
-      if (data && Array.isArray(data.libraries)) {
-        data.libraries.forEach(lib => { lib.updatedAt = ts; });
-        saveData();
-      }
-    };
-
-    // Fix S4：标记"本地已保存但还未确认上传成功"的变更，供自动拉取前判断是否会覆盖未同步数据。
-    // pendingCloudUploadSince 只在标记从 false→true 的那一刻写入，之后重复调用不会刷新它，
-    // 这样 cloudSyncUi.js 里的超时兜底才能准确判断"这个标记卡住多久了"。
-    window.markPendingCloudUpload = function() {
-      if (data) {
-        if (!data.pendingCloudUpload || !data.pendingCloudUploadSince) {
-          data.pendingCloudUploadSince = new Date().toISOString();
-        }
-        data.pendingCloudUpload = true;
-        saveData();
-      }
-    };
-
-    window.clearPendingCloudUpload = function() {
-      if (data) {
-        data.pendingCloudUpload = false;
-        data.pendingCloudUploadSince = null;
-        saveData();
-      }
-    };
-
-    window.isPendingCloudUpload = function() {
-      return Boolean(data && data.pendingCloudUpload);
     };
 
     function migrateLibrary(lib) {
@@ -3447,7 +3525,7 @@
       dictationIndex = 0;
       saveData();
       renderApp();
-      // 先删云端对应 session，避免自动拉取把记录重新同步回来；多个词库依次删，避免同时触发上传。
+      // 同步端以同一个版本确认整场撤销，不单独删除旧云端记录。
       if (window.cloudSync && typeof window.cloudSync.deleteSessionAndSync === "function") {
         for (const item of group) {
           const sessionSourceLocalId = item.record.recordId
